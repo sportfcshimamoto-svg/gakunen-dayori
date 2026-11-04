@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>学年だより作成</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <h1>学年だより作成</h1>
+  <div class="topbtns">
+    <button id="btn-word" class="primary">Wordファイルを作る</button>
+    <button id="btn-export">保存ファイルに書き出す</button>
+    <label class="btn">保存ファイルを読み込む<input id="file-import" type="file" accept=".json,application/json" hidden></label>
+    <button id="btn-reset" class="danger">新しく作り直す</button>
+  </div>
+</header>
+<main class="layout">
+  <section class="editor">
+    <nav class="tabs" id="tabs"></nav>
+    <div id="panel" class="panel"></div>
+  </section>
+  <section class="viewer">
+    <div id="fit" class="fit"></div>
+    <div class="zoombar">
+      <span>プレビュー（Wordの仕上がりとは少しちがうことがあります）</span>
+      <label>大きさ <input id="zoom" type="range" min="0.4" max="1.2" step="0.05" value="0.7"></label>
+    </div>
+    <div id="preview" class="preview"></div>
+  </section>
+</main>
+<dialog id="precheck" class="precheck">
+  <h2>Wordファイルを作る前の確認</h2>
+  <p class="help">次のところを確かめてください。どれもお知らせです。直さなくても「このまま作る」でWordファイルを作れます。</p>
+  <ol id="precheck-list"></ol>
+  <div class="precheck-btns">
+    <button id="precheck-back">戻って直す</button>
+    <button id="precheck-go" class="primary">このまま作る</button>
+  </div>
+</dialog>
+<div id="toast" class="toast" hidden></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
