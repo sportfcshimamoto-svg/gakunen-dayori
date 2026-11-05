@@ -8,6 +8,7 @@ import { extractEvents, toNewsletterEvents } from './lib/events.js';
 import { renderPreview } from './lib/preview.js';
 import { placeIllusts } from './lib/illust-place.js';
 import { extractCurriculum, SCHOOL_MONTHS } from './lib/curriculum.js';
+import { isPdf, extractCurriculumPdf } from './lib/curriculum-pdf.js';   // PDFを読む部品（大きい）は、PDFを選んだときだけ読み込む
 import { greetingPrompt, sectionPrompt, cleanAiText, looksLikeNames, SECTION_KINDS } from './lib/ai-prompt.js';
 import { precheck } from './lib/precheck.js';
 import {
@@ -341,7 +342,7 @@ const sameLines = (a, b) => JSON.stringify(a || []) === JSON.stringify(b || []);
 async function importCurriculum(bytes, name, sample) {
   const g = state.data.grade;
   try {
-    const r = await extractCurriculum(bytes);
+    const r = isPdf(bytes) ? await extractCurriculumPdf(bytes) : await extractCurriculum(bytes);
     if (!r.subjects.length) { toast(r.warnings[0] || 'カリキュラムの表が見つかりませんでした'); return; }
     if (curriculum[g] && !confirm(`${g}年生のカリキュラムを、「${name}」の内容に置きかえます。よろしいですか？\n（⑥で直した内容は消えます）`)) return;
     const isSample = sample || r.subjects.some((s) => Object.values(s.months).flat().some((l) => l.includes('サンプル')));
@@ -358,13 +359,13 @@ function panelCurriculum() {
   const g = state.data.grade; const c = curriculum[g];
   const m = curMonth || state.data.month;
   let h = `<h2>${g}年生のカリキュラム</h2>
-  <p class="help">教科の年間カリキュラム（Word。横が月、縦が教科の表）を読み込むと、③学習予定に、その月の項目を原文のまま入れられます。学年ごとに、このブラウザに保存します（毎月使えます）。</p>
-  <div class="adder"><label class="btn">カリキュラム（Word）を選ぶ<input id="f-cur" type="file" accept=".docx" hidden></label>
+  <p class="help">教科の年間カリキュラム（WordかPDF。横が月、縦が教科の表）を読み込むと、③学習予定に、その月の項目を原文のまま入れられます。学年ごとに、このブラウザに保存します（毎月使えます）。</p>
+  <div class="adder"><label class="btn">カリキュラム（Word・PDF）を選ぶ<input id="f-cur" type="file" accept=".docx,.pdf,application/pdf" hidden></label>
   <button id="btn-cur-sample">サンプルで試す</button>
   ${c ? '<button id="btn-cur-del" class="small">このカリキュラムを消す</button>' : ''}</div>`;
   if (!c) return h + `<p class="help">まだ読み込んでいません。本物のカリキュラムが届くまでは「サンプルで試す」で動きを確かめられます（中身は「【サンプル】」と書いた仮のデータです）。</p>`;
   h += `<p class="help" style="margin:4px 0">読み込んだファイル：${esc(c.name)}（${esc(c.importedAt)}）</p>`;
-  if (c.sample) h += '<div class="notice warn"><b>これはサンプル（仮のデータ）です。</b>本物のカリキュラムではありません。本物が届いたら、「カリキュラム（Word）を選ぶ」で読み込み直してください。</div>';
+  if (c.sample) h += '<div class="notice warn"><b>これはサンプル（仮のデータ）です。</b>本物のカリキュラムではありません。本物が届いたら、「カリキュラム（Word・PDF）を選ぶ」で読み込み直してください。</div>';
   for (const w of c.warnings || []) h += `<div class="notice warn">⚠ ${esc(w)}</div>`;
   h += `<div class="adder"><label>表示する月 <select id="f-curmonth">${SCHOOL_MONTHS.map((x) => `<option value="${x}" ${x === m ? 'selected' : ''}>${x}月</option>`).join('')}</select></label>
     <span class="help" style="margin:0">教科の名前や項目は、ここで直せます（直したところには印が付きます）。</span></div>`;
@@ -374,7 +375,7 @@ function panelCurriculum() {
     h += `<div class="card"><div class="card-head"><input type="text" data-cu="label" data-i="${i}" value="${esc(s.label)}" style="max-width:8em" placeholder="教科">
       <div class="row-actions"><button class="small" data-cu="up" data-i="${i}" title="上へ">↑</button><button class="small" data-cu="down" data-i="${i}" title="下へ">↓</button><button class="small" data-cu="del" data-i="${i}" title="消す">×</button></div></div>
       <textarea rows="${Math.max(2, cur.length + 1)}" data-cu="lines" data-i="${i}" placeholder="（${m}月の項目はありません）">${esc(cur.join('\n'))}</textarea>
-      ${edited ? `<div class="item-note">✎ Wordの原文から変えています${orig.length ? `（原文：${esc(orig.join(' / '))}）` : '（原文では空）'} <button class="small" data-cu="revert" data-i="${i}">原文に戻す</button></div>` : ''}</div>`;
+      ${edited ? `<div class="item-note">✎ 読み込んだ原文から変えています${orig.length ? `（原文：${esc(orig.join(' / '))}）` : '（原文では空）'} <button class="small" data-cu="revert" data-i="${i}">原文に戻す</button></div>` : ''}</div>`;
   });
   h += '<button id="btn-cur-add">＋ 教科を足す</button>';
   // 1年分の一覧
@@ -392,7 +393,7 @@ function panelLearning() {
     h += `<div class="adder"><button id="btn-from-cur">カリキュラムから${m}月の分を入れる</button><span class="help" style="margin:0">⑥カリキュラムの${m}月の項目を、原文のまま入れます（カリキュラムにない教科の行は、そのまま残します）</span></div>`;
     if (c.sample) h += '<div class="notice warn">⑥のカリキュラムはサンプル（仮のデータ）です。本物のカリキュラムを読み込むまでは、学年だよりに使わないでください。</div>';
   } else {
-    h += '<p class="help">⑥カリキュラムでWordを読み込むと、ここにその月の項目を自動で入れられます。</p>';
+    h += '<p class="help">⑥カリキュラムでWordかPDFを読み込むと、ここにその月の項目を自動で入れられます。</p>';
   }
   state.data.learning.forEach((it, i) => {
     h += `<div class="card"><div class="card-head"><input type="text" data-lr="label" data-i="${i}" value="${esc(it.label)}" style="max-width:8em">
