@@ -123,6 +123,29 @@ async function removePhotos(ids) {
     const m = photoMeta.get(id); if (m) URL.revokeObjectURL(m.url); photoMeta.delete(id);
   }
 }
+// ---------- 写真の自動削除（毎月1日） ----------
+// 新しい月になって最初にアプリを開いたとき、前の月までに入れた写真を、このブラウザから消す。
+// 消すのは記事の写真だけ（ロゴ・季節のイラストは消さない）。保存ファイルに書き出した写真は消えない。
+const CLEAN_KEY = STORE_KEY + ':photoCleanMonth';
+async function monthlyPhotoCleanup(now = new Date()) {
+  const ym = `${now.getFullYear()}-${now.getMonth() + 1}`;
+  let last = null; try { last = localStorage.getItem(CLEAN_KEY); } catch { /* なし */ }
+  if (last === ym) return;
+  const start = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  let old;
+  try { old = (await allPhotos()).filter((r) => !r.kind && (r.addedAt || 0) < start).map((r) => r.id); } catch { return; }
+  if (old.length) {
+    await removePhotos(old);
+    const gone = new Set(old);
+    for (const sec of state.data.sections || []) {
+      sec.photos = (sec.photos || []).filter((id) => !gone.has(id));
+      if (sec.photoOff) sec.photoOff = sec.photoOff.filter((id) => !gone.has(id));
+    }
+    save();
+    toast(`${now.getMonth() + 1}月になったので、前の月までに入れた写真（${old.length}枚）を、このブラウザから消しました`);
+  }
+  try { localStorage.setItem(CLEAN_KEY, ym); } catch { /* 覚えられなくても、次に開いたときにもう一度調べるだけ */ }
+}
 async function addPhotos(si, files) {
   const sec = state.data.sections[si]; if (!sec) return;
   sec.photos = sec.photos || [];
@@ -218,10 +241,14 @@ function panelEvents() {
   let h = `<h2>${d.month}月の行事予定（${d.grade}年生）</h2>
   <div class="adder"><label class="btn">年間行事予定（Excel）を選ぶ<input id="f-xlsx" type="file" accept=".xlsx" hidden></label>
   <span class="help" style="margin:0">${state.xlsxName ? `読み込んだファイル：${esc(state.xlsxName)}` : 'まだ読み込んでいません'}</span></div>
+  <div class="card sheet-card"><div class="card-head"><b>Googleスプレッドシートから読み込む</b></div>
+    <div class="adder" style="margin:6px 0 0"><input id="f-sheet" type="url" placeholder="https://docs.google.com/spreadsheets/d/…" value="${esc(sheetUrl)}" style="flex:1;min-width:12em">
+    <button id="btn-sheet">スプレッドシートから読み込む</button></div>
+    <p class="help" style="margin:6px 0 0">共有のリンクを貼ってください。リンクはこのブラウザが覚えるので、次からはボタンを押すだけで最新の行事予定を読み込めます。共有の設定を「リンクを知っている全員」にしてください。</p></div>
   <p class="help">チェックが付いている行事が学年だよりに載ります。文字はその場で直せます。灰色の行事は、自動で「載せない」にしたものです（理由を下に書いています）。</p>`;
   const ef = state.eventsFor;
   if (ef && (ef.grade !== d.grade || ef.month !== d.month)) {
-    h += `<div class="notice warn">この一覧は ${ef.grade}年生・${ef.month}月 の行事です。${xlsxBytes ? '' : 'Excelをもう一度選ぶと、'}${d.grade}年生・${d.month}月 の行事に読み直せます。${xlsxBytes ? '<button id="btn-reextract" class="small">読み直す</button>' : ''}</div>`;
+    h += `<div class="notice warn">この一覧は ${ef.grade}年生・${ef.month}月 の行事です。${xlsxBytes ? '' : sheetUrl ? '「スプレッドシートから読み込む」を押すか、Excelをもう一度選ぶと、' : 'Excelをもう一度選ぶと、'}${d.grade}年生・${d.month}月 の行事に読み直せます。${xlsxBytes ? '<button id="btn-reextract" class="small">読み直す</button>' : ''}</div>`;
   }
   for (const w of state.extractWarnings || []) h += `<div class="notice warn">⚠ ${esc(w)}</div>`;
   const total = state.eventDays.reduce((n, day) => n + day.items.filter((i) => i.include).length, 0);
@@ -240,7 +267,7 @@ function panelEvents() {
     }
     h += `<button class="small" data-ev="addItem" data-d="${di}">＋ この日に行事を足す</button></div></div>`;
   });
-  if (!state.eventDays.length) h += '<p class="help">Excelを選ぶか、下から日にちを足してください。</p>';
+  if (!state.eventDays.length) h += '<p class="help">Excelを選ぶか、スプレッドシートから読み込むか、下から日にちを足してください。</p>';
   h += `<div class="adder">日にち <input id="f-newday" type="number" min="1" max="31" style="width:5em"> 日 <button id="btn-addday">行事を足す</button></div>`;
   return h + boxIllustField();
 }
@@ -257,6 +284,33 @@ function boxIllustField() {
     <div class="ill-set"><div class="ill-box box-box">${cur ? `<img src="${urlOf(cur)}" class="${own.includes(cur) ? 'gray' : ''}" alt="">` : '<span>絵なし</span>'}</div>
     <label>絵 <select id="f-boxchoice">${o('', `${m}月の絵（最初からある絵）`)}${own.map((id) => o(id, `取り込んだ${illLabel(m, id)}`)).join('')}${o('none', 'なし')}</select></label></div>
     <p class="help" style="margin:6px 0 0">${m === 11 ? '11月は、11月号のきのこの絵です。' : ''}取り込んだ絵（⑤2ページ目の「季節のイラスト」で入れた絵）からも選べます。選んだ絵は2ページ目には使いません。</p></div>`;
+}
+
+// ---------- Googleスプレッドシート（共有リンク）から行事予定を読む ----------
+// リンクはこのブラウザにだけ覚える（アプリの中や保存ファイルには入れない）。
+// 中身は毎回Googleから Excel の形でダウンロードして、Excelを選んだときと同じように読む。
+let sheetUrl = (() => { try { return localStorage.getItem(STORE_KEY + ':sheet') || ''; } catch { return ''; } })();
+const sheetIdOf = (url) => { const m = /\/spreadsheets\/d\/([A-Za-z0-9_-]{20,})/.exec(String(url || '')); return m ? m[1] : null; };
+async function loadSheet(url) {
+  const id = sheetIdOf(url);
+  if (!id) { toast('Googleスプレッドシートのリンクではないようです。共有のリンク（https://docs.google.com/spreadsheets/d/…）を貼ってください'); return; }
+  toast('スプレッドシートを読み込んでいます…');
+  let bytes;
+  try {
+    const r = await fetch(`https://docs.google.com/spreadsheets/d/${id}/export?format=xlsx`, { cache: 'no-store' });
+    if (!r.ok) throw new Error(String(r.status));
+    bytes = new Uint8Array(await r.arrayBuffer());
+    if (bytes[0] !== 0x50 || bytes[1] !== 0x4b) throw new Error('not xlsx');   // Excelの形（PK）でなければ失敗
+  } catch {
+    toast('スプレッドシートを読み込めませんでした。共有の設定が「リンクを知っている全員」になっているか、インターネットにつながっているかを確かめてください');
+    renderPanel(); return;
+  }
+  // 読み込めたリンクだけを覚える（まちがったリンクで、前のリンクを消さない）
+  sheetUrl = String(url).trim();
+  try { localStorage.setItem(STORE_KEY + ':sheet', sheetUrl); } catch { /* 覚えられなくても読み込みはできる */ }
+  xlsxBytes = bytes;
+  state.xlsxName = 'Googleスプレッドシート（' + new Date().toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + 'に読み込み）';
+  await runExtract();
 }
 
 async function runExtract() {
@@ -335,7 +389,7 @@ function panelLearning() {
   const c = curriculum[state.data.grade]; const m = state.data.month;
   let h = `<h2>${m}月の学習予定</h2><p class="help">教科ごとに、1行ずつ書いてください（改行すると次の行になります）。</p>`;
   if (c) {
-    h += `<div class="adder"><button id="btn-from-cur">カリキュラムから${m}月の分を入れる</button><span class="help" style="margin:0">⑥カリキュラムの${m}月の項目を、原文のまま入れます</span></div>`;
+    h += `<div class="adder"><button id="btn-from-cur">カリキュラムから${m}月の分を入れる</button><span class="help" style="margin:0">⑥カリキュラムの${m}月の項目を、原文のまま入れます（カリキュラムにない教科の行は、そのまま残します）</span></div>`;
     if (c.sample) h += '<div class="notice warn">⑥のカリキュラムはサンプル（仮のデータ）です。本物のカリキュラムを読み込むまでは、学年だよりに使わないでください。</div>';
   } else {
     h += '<p class="help">⑥カリキュラムでWordを読み込むと、ここにその月の項目を自動で入れられます。</p>';
@@ -452,7 +506,7 @@ async function aiClick(t, btn) {
 function panelPage2() {
   newsletterData();   // 季節のイラストの置き場所（lastPlacement）を最新にする
   let h =`<h2>2ページ目の記事</h2><p class="help">改行すると新しい段落になります。下線を引きたいところは __このように__ 下線2本ずつではさみます。</p>
-  <p class="help">写真は、このパソコンのブラウザの中だけに保存します（インターネットには送りません）。Wordでは白黒になります。並べ替えは、写真をドラッグするか ← → で行えます。</p>
+  <p class="help">写真は、このパソコンのブラウザの中だけに保存します（インターネットには送りません）。Wordでは白黒になります。並べ替えは、写真をドラッグするか ← → で行えます。<b>毎月1日をすぎて最初にアプリを開いたとき、前の月までに入れた写真は自動で消えます</b>（ロゴ・季節のイラストは消えません）。</p>
   <label class="help" style="display:block"><input type="checkbox" id="f-autofill" ${state.data.autoFill === false ? '' : 'checked'}> 2ページ目の下が大きく空いたときは、季節のイラストを入れる</label>
   ${seasonCard()}`;
   state.data.sections.forEach((s, i) => {
@@ -689,6 +743,7 @@ $('#panel').addEventListener('drop', async (e) => {
 });
 
 $('#panel').addEventListener('click', async (e) => {
+  if (e.target.id === 'btn-sheet') { await loadSheet($('#f-sheet').value); return; }
   const t = e.target.closest('button'); if (!t) return;
   const d = state.data; const i = Number(t.dataset.i);
   if (t.id === 'btn-reextract') { await runExtract(); return; }
@@ -735,6 +790,12 @@ $('#panel').addEventListener('click', async (e) => {
     if (inputs.length) inputs[inputs.length - 1].focus();
   }
 });
+/** 教科名を比べるための形（空白を除き、同じ教科の別の呼び方をそろえる） */
+const SUBJECT_ALIAS = { 図工: '図画工作', 家庭科: '家庭', 外国語活動: '外国語', 英語: '外国語', 総合的な学習の時間: '総合', 特別の教科道徳: '道徳' };
+function subjectKey(label) {
+  const k = String(label || '').replace(/[\s　]+/g, '');
+  return SUBJECT_ALIAS[k] || k;
+}
 /** ⑥カリキュラムと、③の「カリキュラムから入れる」のボタン。処理したら true */
 async function curriculumClick(t, d, i) {
   const g = d.grade; const c = curriculum[g];
@@ -749,9 +810,12 @@ async function curriculumClick(t, d, i) {
     const m = d.month;
     const filled = d.learning.some((it) => it.lines.length);
     if (filled && !confirm(`今の学習予定を、カリキュラムの${m}月の項目に置きかえます。よろしいですか？`)) return true;
-    d.learning = c.subjects.map((s) => ({ label: s.label, lines: [...(s.months[m] || [])] }));
-    const n = d.learning.filter((it) => it.lines.length).length;
-    toast(`カリキュラムから${m}月の分を入れました（${n}教科）${c.sample ? '。サンプルのデータです' : ''}`);
+    // カリキュラムにない教科（道徳・総合など）の行は、書いてある内容ごと下に残す
+    const inCur = new Set(c.subjects.map((s) => subjectKey(s.label)));
+    const kept = d.learning.filter((it) => subjectKey(it.label) && !inCur.has(subjectKey(it.label)));
+    d.learning = [...c.subjects.map((s) => ({ label: s.label, lines: [...(s.months[m] || [])] })), ...kept.map((it) => ({ ...it, lines: [...it.lines] }))];
+    const n = d.learning.length - kept.length;
+    toast(`カリキュラムから${m}月の分を入れました（${n}教科）${kept.length ? `。${kept.map((it) => it.label).join('・')}は、そのまま残しています` : ''}${c.sample ? '。サンプルのデータです' : ''}`);
     changed(); renderPanel(); return true;
   }
   if (!c) return false;
@@ -786,6 +850,7 @@ function updatePreview() {
   const lineMsg = (room) => (room >= 0 ? `あと約${Math.floor(room / LINE_CM)}行` : `約${Math.ceil(-room / LINE_CM)}行はみ出しています`);
   $('#fit').innerHTML = `<span class="badge ${c.room1 >= 0 ? 'ok' : 'ng'}">1ページ目：${c.room1 >= 0 ? '収まっています' : 'はみ出しています'}（${lineMsg(c.room1)}）</span>`
     + `<span class="badge ${c.fit.fits ? 'ok' : 'ng'}">2ページ目：${c.fit.fits ? '収まっています' : 'はみ出しています'}（${c.fill ? '下の空きは季節のイラストで埋めています' : lineMsg(c.room2)}）</span>`
+    + (c.p1.learningScale < 1 ? `<span class="badge info">1ページ目に収めるため、学習予定の文字を${Math.round(c.p1.learningScale * 100)}%の大きさにしています</span>` : '')
     + (c.room1 < 0 ? '<span class="badge ng">あいさつ・行事・学習予定のどれかを短くしてください</span>' : '')
     + (!c.fit.fits ? `<span class="badge ng">${d.sections.some((s) => s.perRow || (s.photoSize || 1) > 1)
       ? '「1行の枚数」を増やすか「写真の大きさ」を小さくするか、記事か写真を減らしてください' : '2ページ目の記事か写真を減らしてください'}</span>` : '')
@@ -937,4 +1002,4 @@ let toastTimer = null;
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 4000); }
 
 renderTabs(); renderPanel(); updatePreview();
-loadPhotoMeta().then(() => { renderPanel(); updatePreview(); });
+monthlyPhotoCleanup().then(loadPhotoMeta).then(() => { renderPanel(); updatePreview(); });

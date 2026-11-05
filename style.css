@@ -106,6 +106,7 @@ details summary { cursor: pointer; margin-top: 8px; font-size: 14px; color: var(
 .fit .badge { border-radius: 6px; padding: 4px 10px; font-size: 14px; }
 .badge.ok { background: var(--ok-weak); color: var(--ok); }
 .badge.ng { background: var(--ng-weak); color: var(--ng); font-weight: bold; }
+.badge.info { background: #eaf1fb; color: #1d4f91; }
 .zoombar { display: flex; justify-content: space-between; align-items: center; padding: 0 16px 6px; color: var(--muted); font-size: 13px; gap: 8px; flex-wrap: wrap; }
 .preview { flex: 1; overflow: auto; padding: 8px 16px 40px; }
 .preview .page { width: 21cm; height: 29.7cm; background: #fff; margin: 0 auto 16px; box-shadow: 0 1px 4px rgba(0,0,0,.18); position: relative; overflow: hidden;
