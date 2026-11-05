@@ -8,7 +8,8 @@ import { extractEvents, toNewsletterEvents } from './lib/events.js';
 import { renderPreview } from './lib/preview.js';
 import { placeIllusts } from './lib/illust-place.js';
 import { extractCurriculum, SCHOOL_MONTHS } from './lib/curriculum.js';
-import { isPdf, extractCurriculumPdf } from './lib/curriculum-pdf.js';   // PDFを読む部品（大きい）は、PDFを選んだときだけ読み込む
+import { isPdf, extractCurriculumPdf } from './lib/curriculum-pdf.js';
+import { extractCurriculumHtml } from './lib/curriculum-paste.js';   // PDFを読む部品（大きい）は、PDFを選んだときだけ読み込む
 import { greetingPrompt, sectionPrompt, cleanAiText, looksLikeNames, SECTION_KINDS } from './lib/ai-prompt.js';
 import { precheck } from './lib/precheck.js';
 import {
@@ -339,10 +340,12 @@ function saveCurriculum() {
 let curMonth = null;   // ⑥で表示している月（はじめは学年だよりの月）
 const sameLines = (a, b) => JSON.stringify(a || []) === JSON.stringify(b || []);
 
-async function importCurriculum(bytes, name, sample) {
+// src：ファイルの中身（Word・PDF）か、{ html: 貼り付けた表 }
+async function importCurriculum(src, name, sample) {
   const g = state.data.grade;
   try {
-    const r = isPdf(bytes) ? await extractCurriculumPdf(bytes) : await extractCurriculum(bytes);
+    const r = src.html != null ? extractCurriculumHtml(src.html)
+      : isPdf(src) ? await extractCurriculumPdf(src) : await extractCurriculum(src);
     if (!r.subjects.length) { toast(r.warnings[0] || 'カリキュラムの表が見つかりませんでした'); return; }
     if (curriculum[g] && !confirm(`${g}年生のカリキュラムを、「${name}」の内容に置きかえます。よろしいですか？\n（⑥で直した内容は消えます）`)) return;
     const isSample = sample || r.subjects.some((s) => Object.values(s.months).flat().some((l) => l.includes('サンプル')));
@@ -390,10 +393,13 @@ function panelCurriculum() {
   <div class="adder"><label class="btn">カリキュラム（Word・PDF）を選ぶ<input id="f-cur" type="file" accept=".docx,.pdf,application/pdf" hidden></label>
   <button id="btn-cur-sample">サンプルで試す</button>
   ${c ? '<button id="btn-cur-del" class="small">このカリキュラムを消す</button>' : ''}</div>
+  <div class="card sheet-card"><div class="card-head"><b>表をコピーして貼り付ける</b></div>
+    <textarea id="f-curpaste" rows="2" placeholder="ここをクリックして、Ctrl＋V（または右クリック →「貼り付け」）" style="margin-top:6px"></textarea>
+    <p class="help" style="margin:6px 0 0">学校のパソコンでファイルを選べないときは、こちらを使ってください。カリキュラム（WordやGoogleドキュメント）を開き、表の全体をなぞって選んで Ctrl＋C でコピーし、上の欄に貼り付けます。2ページにわたる表も、まとめて選んでください。</p></div>
   <div class="card sheet-card"><div class="card-head"><b>Googleドキュメントから読み込む</b></div>
     <div class="adder" style="margin:6px 0 0"><input id="f-curdoc" type="url" placeholder="https://docs.google.com/document/d/…" value="${esc(curDocUrl)}" style="flex:1;min-width:12em">
     <button id="btn-curdoc">ドキュメントから読み込む</button></div>
-    <p class="help" style="margin:6px 0 0">学校のパソコンでファイルを選べないときは、こちらを使ってください。カリキュラムのWordをGoogleドライブに入れて開き、共有の設定を「リンクを知っている全員」にして、そのリンクを貼ります。リンクはこのブラウザが覚えます。</p></div>`;
+    <p class="help" style="margin:6px 0 0">カリキュラムのWordをGoogleドライブに入れて開き、共有の設定を「リンクを知っている全員」にして、そのリンクを貼ります。リンクはこのブラウザが覚えます。</p></div>`;
   if (!c) return h + `<p class="help">まだ読み込んでいません。本物のカリキュラムが届くまでは「サンプルで試す」で動きを確かめられます（中身は「【サンプル】」と書いた仮のデータです）。</p>`;
   h += `<p class="help" style="margin:4px 0">読み込んだファイル：${esc(c.name)}（${esc(c.importedAt)}）</p>`;
   if (c.sample) h += '<div class="notice warn"><b>これはサンプル（仮のデータ）です。</b>本物のカリキュラムではありません。本物が届いたら、読み込み直してください。</div>';
@@ -772,6 +778,19 @@ $('#panel').addEventListener('drop', async (e) => {
   to.photos.splice(pos, 0, dragging.id);
   if (from !== to && wasOff) to.photoOff = [...(to.photoOff || []), dragging.id];
   dragging = null; changed(); renderPanel();
+});
+
+// ⑥：カリキュラムの表を貼り付けたとき（貼り付けたデータの中の表＝HTMLを読む）
+$('#panel').addEventListener('paste', async (e) => {
+  if (e.target.id !== 'f-curpaste') return;
+  e.preventDefault();
+  const html = e.clipboardData.getData('text/html');
+  if (!html || !/<table/i.test(html)) {
+    toast('貼り付けたものの中に、表が見つかりませんでした。カリキュラムの表をなぞって選び、コピーしてから貼り付けてください。'
+      + (e.clipboardData.types.includes('Files') ? '（画像は読み込めません）' : ''));
+    return;
+  }
+  await importCurriculum({ html }, '貼り付けた表', false);
 });
 
 $('#panel').addEventListener('click', async (e) => {
