@@ -8,8 +8,7 @@ import { extractEvents, toNewsletterEvents } from './lib/events.js';
 import { renderPreview } from './lib/preview.js';
 import { placeIllusts } from './lib/illust-place.js';
 import { extractCurriculum, SCHOOL_MONTHS } from './lib/curriculum.js';
-import { isPdf, extractCurriculumPdf } from './lib/curriculum-pdf.js';
-import { extractCurriculumHtml } from './lib/curriculum-paste.js';   // PDFを読む部品（大きい）は、PDFを選んだときだけ読み込む
+import { extractCurriculumHtml } from './lib/curriculum-paste.js';
 import { greetingPrompt, sectionPrompt, cleanAiText, looksLikeNames, SECTION_KINDS } from './lib/ai-prompt.js';
 import { precheck } from './lib/precheck.js';
 import {
@@ -340,12 +339,11 @@ function saveCurriculum() {
 let curMonth = null;   // ⑥で表示している月（はじめは学年だよりの月）
 const sameLines = (a, b) => JSON.stringify(a || []) === JSON.stringify(b || []);
 
-// src：ファイルの中身（Word・PDF）か、{ html: 貼り付けた表 }
+// src：Wordファイルの中身（サンプル）か、{ html: 貼り付けた表 }
 async function importCurriculum(src, name, sample) {
   const g = state.data.grade;
   try {
-    const r = src.html != null ? extractCurriculumHtml(src.html)
-      : isPdf(src) ? await extractCurriculumPdf(src) : await extractCurriculum(src);
+    const r = src.html != null ? extractCurriculumHtml(src.html) : await extractCurriculum(src);
     if (!r.subjects.length) { toast(r.warnings[0] || 'カリキュラムの表が見つかりませんでした'); return; }
     if (curriculum[g] && !confirm(`${g}年生のカリキュラムを、「${name}」の内容に置きかえます。よろしいですか？\n（⑥で直した内容は消えます）`)) return;
     const isSample = sample || r.subjects.some((s) => Object.values(s.months).flat().some((l) => l.includes('サンプル')));
@@ -358,53 +356,22 @@ async function importCurriculum(src, name, sample) {
   } catch (e) { toast(e.message || String(e)); }
 }
 
-// ---------- Googleドキュメント（共有リンク）からカリキュラムを読む ----------
-// 学校のパソコンでファイルを選べないときのため。行事予定のスプレッドシートと同じしくみ。
-// Googleから Word の形でダウンロードして、Wordを選んだときと同じように読む。リンクはこのブラウザにだけ覚える。
 let pasteStatus = { msg: '', kind: '' };   // ⑥の貼り付けの結果（画面を描き直しても残す）
-let curDocUrl = (() => { try { return localStorage.getItem(STORE_KEY + ':curdoc') || ''; } catch { return ''; } })();
-// Googleドキュメントのリンクも、Googleドライブに置いたWordファイルのリンクも、同じ方法でダウンロードできる
-const docIdOf = (url) => { const m = /\/(?:document\/d|file\/d)\/([A-Za-z0-9_-]{20,})/.exec(String(url || '')) || /[?&]id=([A-Za-z0-9_-]{20,})/.exec(String(url || '')); return m ? m[1] : null; };
-async function loadCurDoc(url) {
-  if (/\/spreadsheets\/d\//.test(String(url))) { toast('これはスプレッドシートのリンクです。カリキュラムの「ドキュメント」のリンクを貼ってください'); return; }
-  const id = docIdOf(url);
-  if (!id) { toast('Googleドキュメントのリンクではないようです。共有のリンク（https://docs.google.com/document/d/…）を貼ってください'); return; }
-  toast('ドキュメントを読み込んでいます…');
-  let bytes;
-  try {
-    const r = await fetch(`https://docs.google.com/document/d/${id}/export?format=docx`, { cache: 'no-store' });
-    if (!r.ok) throw new Error(String(r.status));
-    bytes = new Uint8Array(await r.arrayBuffer());
-    if (bytes[0] !== 0x50 || bytes[1] !== 0x4b) throw new Error('not docx');   // Wordの形（PK）でなければ失敗
-  } catch {
-    toast('ドキュメントを読み込めませんでした。共有の設定が「リンクを知っている全員」になっているか、インターネットにつながっているかを確かめてください');
-    return;
-  }
-  // 読み込めたリンクだけを覚える（まちがったリンクで、前のリンクを消さない）
-  curDocUrl = String(url).trim();
-  try { localStorage.setItem(STORE_KEY + ':curdoc', curDocUrl); } catch { /* 覚えられなくても読み込みはできる */ }
-  await importCurriculum(bytes, 'Googleドキュメント', false);
-}
 
 function panelCurriculum() {
   const g = state.data.grade; const c = curriculum[g];
   const m = curMonth || state.data.month;
   let h = `<h2>${g}年生のカリキュラム</h2>
-  <p class="help">教科の年間カリキュラム（Googleドキュメント・Word・PDF。横が月、縦が教科の表）を読み込むと、③学習予定に、その月の項目を原文のまま入れられます。学年ごとに、このブラウザに保存します（毎月使えます）。</p>
-  <div class="adder"><label class="btn">カリキュラム（Word・PDF）を選ぶ<input id="f-cur" type="file" accept=".docx,.pdf,application/pdf" hidden></label>
-  <button id="btn-cur-sample">サンプルで試す</button>
-  ${c ? '<button id="btn-cur-del" class="small">このカリキュラムを消す</button>' : ''}</div>
+  <p class="help">教科の年間カリキュラム（横が月、縦が教科の表）を読み込むと、③学習予定に、その月の項目を原文のまま入れられます。学年ごとに、このブラウザに保存します（毎月使えます）。</p>
   <div class="card sheet-card"><div class="card-head"><b>表をコピーして貼り付ける</b></div>
     <textarea id="f-curpaste" rows="2" placeholder="ここをクリックして、Ctrl＋V（または右クリック →「貼り付け」）" style="margin-top:6px"></textarea>
     <div class="adder" style="margin:6px 0 0"><button id="btn-curclip">コピーした表を読み込む（ボタンで）</button><span class="help" style="margin:0">Ctrl＋V でうまくいかないときは、こちらを押してください</span></div>
     <div id="cur-paste-status" class="notice ${pasteStatus.kind === 'ok' ? '' : 'warn'}" style="margin-top:6px" ${pasteStatus.msg ? '' : 'hidden'}>${esc(pasteStatus.msg)}</div>
-    <p class="help" style="margin:6px 0 0">学校のパソコンでファイルを選べないときは、こちらを使ってください。カリキュラム（WordやGoogleドキュメント）を開き、表の全体をなぞって選んで Ctrl＋C でコピーし、上の欄に貼り付けます。2ページにわたる表も、まとめて選んでください。</p></div>
-  <div class="card sheet-card"><div class="card-head"><b>Googleドキュメントから読み込む</b></div>
-    <div class="adder" style="margin:6px 0 0"><input id="f-curdoc" type="url" placeholder="https://docs.google.com/document/d/…" value="${esc(curDocUrl)}" style="flex:1;min-width:12em">
-    <button id="btn-curdoc">ドキュメントから読み込む</button></div>
-    <p class="help" style="margin:6px 0 0">カリキュラムのWordをGoogleドライブに入れて開き、共有の設定を「リンクを知っている全員」にして、そのリンクを貼ります。リンクはこのブラウザが覚えます。</p></div>`;
+    <p class="help" style="margin:6px 0 0">カリキュラム（WordやGoogleドキュメント）を開き、表の全体をなぞって選んで Ctrl＋C でコピーし、上の欄に貼り付けます。2ページにわたる表も、まとめて選んでください。</p></div>
+  <div class="adder"><button id="btn-cur-sample">サンプルで試す</button>
+  ${c ? '<button id="btn-cur-del" class="small">このカリキュラムを消す</button>' : ''}</div>`;
   if (!c) return h + `<p class="help">まだ読み込んでいません。本物のカリキュラムが届くまでは「サンプルで試す」で動きを確かめられます（中身は「【サンプル】」と書いた仮のデータです）。</p>`;
-  h += `<p class="help" style="margin:4px 0">読み込んだファイル：${esc(c.name)}（${esc(c.importedAt)}）</p>`;
+  h += `<p class="help" style="margin:4px 0">読み込んだもの：${esc(c.name)}（${esc(c.importedAt)}）</p>`;
   if (c.sample) h += '<div class="notice warn"><b>これはサンプル（仮のデータ）です。</b>本物のカリキュラムではありません。本物が届いたら、読み込み直してください。</div>';
   for (const w of c.warnings || []) h += `<div class="notice warn">⚠ ${esc(w)}</div>`;
   h += `<div class="adder"><label>表示する月 <select id="f-curmonth">${SCHOOL_MONTHS.map((x) => `<option value="${x}" ${x === m ? 'selected' : ''}>${x}月</option>`).join('')}</select></label>
@@ -681,7 +648,6 @@ $('#panel').addEventListener('change', async (e) => {
     await runExtract(); return;
   }
   if (t.id === 'f-showex') { showExcluded = t.checked; renderPanel(); return; }
-  if (t.id === 'f-cur' && t.files[0]) { const f = t.files[0]; t.value = ''; await importCurriculum(new Uint8Array(await f.arrayBuffer()), f.name, false); return; }
   if (t.id === 'f-curmonth') { curMonth = Number(t.value); renderPanel(); return; }
   if (t.dataset.ai === 'kind' || t.dataset.ai === 'lines') {
     const sec = aiTarget(t.dataset.t); const v = t.dataset.ai === 'kind' ? t.value : Number(t.value) || undefined;
@@ -840,7 +806,6 @@ async function readClipboardTable() {
 
 $('#panel').addEventListener('click', async (e) => {
   if (e.target.id === 'btn-sheet') { await loadSheet($('#f-sheet').value); return; }
-  if (e.target.id === 'btn-curdoc') { await loadCurDoc($('#f-curdoc').value); return; }
   if (e.target.id === 'btn-curclip') { await readClipboardTable(); return; }
   const t = e.target.closest('button'); if (!t) return;
   const d = state.data; const i = Number(t.dataset.i);
