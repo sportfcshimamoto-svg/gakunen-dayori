@@ -355,17 +355,48 @@ async function importCurriculum(bytes, name, sample) {
   } catch (e) { toast(e.message || String(e)); }
 }
 
+// ---------- Googleドキュメント（共有リンク）からカリキュラムを読む ----------
+// 学校のパソコンでファイルを選べないときのため。行事予定のスプレッドシートと同じしくみ。
+// Googleから Word の形でダウンロードして、Wordを選んだときと同じように読む。リンクはこのブラウザにだけ覚える。
+let curDocUrl = (() => { try { return localStorage.getItem(STORE_KEY + ':curdoc') || ''; } catch { return ''; } })();
+// Googleドキュメントのリンクも、Googleドライブに置いたWordファイルのリンクも、同じ方法でダウンロードできる
+const docIdOf = (url) => { const m = /\/(?:document\/d|file\/d)\/([A-Za-z0-9_-]{20,})/.exec(String(url || '')) || /[?&]id=([A-Za-z0-9_-]{20,})/.exec(String(url || '')); return m ? m[1] : null; };
+async function loadCurDoc(url) {
+  if (/\/spreadsheets\/d\//.test(String(url))) { toast('これはスプレッドシートのリンクです。カリキュラムの「ドキュメント」のリンクを貼ってください'); return; }
+  const id = docIdOf(url);
+  if (!id) { toast('Googleドキュメントのリンクではないようです。共有のリンク（https://docs.google.com/document/d/…）を貼ってください'); return; }
+  toast('ドキュメントを読み込んでいます…');
+  let bytes;
+  try {
+    const r = await fetch(`https://docs.google.com/document/d/${id}/export?format=docx`, { cache: 'no-store' });
+    if (!r.ok) throw new Error(String(r.status));
+    bytes = new Uint8Array(await r.arrayBuffer());
+    if (bytes[0] !== 0x50 || bytes[1] !== 0x4b) throw new Error('not docx');   // Wordの形（PK）でなければ失敗
+  } catch {
+    toast('ドキュメントを読み込めませんでした。共有の設定が「リンクを知っている全員」になっているか、インターネットにつながっているかを確かめてください');
+    return;
+  }
+  // 読み込めたリンクだけを覚える（まちがったリンクで、前のリンクを消さない）
+  curDocUrl = String(url).trim();
+  try { localStorage.setItem(STORE_KEY + ':curdoc', curDocUrl); } catch { /* 覚えられなくても読み込みはできる */ }
+  await importCurriculum(bytes, 'Googleドキュメント', false);
+}
+
 function panelCurriculum() {
   const g = state.data.grade; const c = curriculum[g];
   const m = curMonth || state.data.month;
   let h = `<h2>${g}年生のカリキュラム</h2>
-  <p class="help">教科の年間カリキュラム（WordかPDF。横が月、縦が教科の表）を読み込むと、③学習予定に、その月の項目を原文のまま入れられます。学年ごとに、このブラウザに保存します（毎月使えます）。</p>
+  <p class="help">教科の年間カリキュラム（Googleドキュメント・Word・PDF。横が月、縦が教科の表）を読み込むと、③学習予定に、その月の項目を原文のまま入れられます。学年ごとに、このブラウザに保存します（毎月使えます）。</p>
   <div class="adder"><label class="btn">カリキュラム（Word・PDF）を選ぶ<input id="f-cur" type="file" accept=".docx,.pdf,application/pdf" hidden></label>
   <button id="btn-cur-sample">サンプルで試す</button>
-  ${c ? '<button id="btn-cur-del" class="small">このカリキュラムを消す</button>' : ''}</div>`;
+  ${c ? '<button id="btn-cur-del" class="small">このカリキュラムを消す</button>' : ''}</div>
+  <div class="card sheet-card"><div class="card-head"><b>Googleドキュメントから読み込む</b></div>
+    <div class="adder" style="margin:6px 0 0"><input id="f-curdoc" type="url" placeholder="https://docs.google.com/document/d/…" value="${esc(curDocUrl)}" style="flex:1;min-width:12em">
+    <button id="btn-curdoc">ドキュメントから読み込む</button></div>
+    <p class="help" style="margin:6px 0 0">学校のパソコンでファイルを選べないときは、こちらを使ってください。カリキュラムのWordをGoogleドライブに入れて開き、共有の設定を「リンクを知っている全員」にして、そのリンクを貼ります。リンクはこのブラウザが覚えます。</p></div>`;
   if (!c) return h + `<p class="help">まだ読み込んでいません。本物のカリキュラムが届くまでは「サンプルで試す」で動きを確かめられます（中身は「【サンプル】」と書いた仮のデータです）。</p>`;
   h += `<p class="help" style="margin:4px 0">読み込んだファイル：${esc(c.name)}（${esc(c.importedAt)}）</p>`;
-  if (c.sample) h += '<div class="notice warn"><b>これはサンプル（仮のデータ）です。</b>本物のカリキュラムではありません。本物が届いたら、「カリキュラム（Word・PDF）を選ぶ」で読み込み直してください。</div>';
+  if (c.sample) h += '<div class="notice warn"><b>これはサンプル（仮のデータ）です。</b>本物のカリキュラムではありません。本物が届いたら、読み込み直してください。</div>';
   for (const w of c.warnings || []) h += `<div class="notice warn">⚠ ${esc(w)}</div>`;
   h += `<div class="adder"><label>表示する月 <select id="f-curmonth">${SCHOOL_MONTHS.map((x) => `<option value="${x}" ${x === m ? 'selected' : ''}>${x}月</option>`).join('')}</select></label>
     <span class="help" style="margin:0">教科の名前や項目は、ここで直せます（直したところには印が付きます）。</span></div>`;
@@ -393,7 +424,7 @@ function panelLearning() {
     h += `<div class="adder"><button id="btn-from-cur">カリキュラムから${m}月の分を入れる</button><span class="help" style="margin:0">⑥カリキュラムの${m}月の項目を、原文のまま入れます（カリキュラムにない教科の行は、そのまま残します）</span></div>`;
     if (c.sample) h += '<div class="notice warn">⑥のカリキュラムはサンプル（仮のデータ）です。本物のカリキュラムを読み込むまでは、学年だよりに使わないでください。</div>';
   } else {
-    h += '<p class="help">⑥カリキュラムでWordかPDFを読み込むと、ここにその月の項目を自動で入れられます。</p>';
+    h += '<p class="help">⑥カリキュラムを読み込むと、ここにその月の項目を自動で入れられます。</p>';
   }
   state.data.learning.forEach((it, i) => {
     h += `<div class="card"><div class="card-head"><input type="text" data-lr="label" data-i="${i}" value="${esc(it.label)}" style="max-width:8em">
@@ -745,6 +776,7 @@ $('#panel').addEventListener('drop', async (e) => {
 
 $('#panel').addEventListener('click', async (e) => {
   if (e.target.id === 'btn-sheet') { await loadSheet($('#f-sheet').value); return; }
+  if (e.target.id === 'btn-curdoc') { await loadCurDoc($('#f-curdoc').value); return; }
   const t = e.target.closest('button'); if (!t) return;
   const d = state.data; const i = Number(t.dataset.i);
   if (t.id === 'btn-reextract') { await runExtract(); return; }
