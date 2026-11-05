@@ -361,6 +361,7 @@ async function importCurriculum(src, name, sample) {
 // ---------- Googleドキュメント（共有リンク）からカリキュラムを読む ----------
 // 学校のパソコンでファイルを選べないときのため。行事予定のスプレッドシートと同じしくみ。
 // Googleから Word の形でダウンロードして、Wordを選んだときと同じように読む。リンクはこのブラウザにだけ覚える。
+let pasteStatus = { msg: '', kind: '' };   // ⑥の貼り付けの結果（画面を描き直しても残す）
 let curDocUrl = (() => { try { return localStorage.getItem(STORE_KEY + ':curdoc') || ''; } catch { return ''; } })();
 // Googleドキュメントのリンクも、Googleドライブに置いたWordファイルのリンクも、同じ方法でダウンロードできる
 const docIdOf = (url) => { const m = /\/(?:document\/d|file\/d)\/([A-Za-z0-9_-]{20,})/.exec(String(url || '')) || /[?&]id=([A-Za-z0-9_-]{20,})/.exec(String(url || '')); return m ? m[1] : null; };
@@ -395,6 +396,8 @@ function panelCurriculum() {
   ${c ? '<button id="btn-cur-del" class="small">このカリキュラムを消す</button>' : ''}</div>
   <div class="card sheet-card"><div class="card-head"><b>表をコピーして貼り付ける</b></div>
     <textarea id="f-curpaste" rows="2" placeholder="ここをクリックして、Ctrl＋V（または右クリック →「貼り付け」）" style="margin-top:6px"></textarea>
+    <div class="adder" style="margin:6px 0 0"><button id="btn-curclip">コピーした表を読み込む（ボタンで）</button><span class="help" style="margin:0">Ctrl＋V でうまくいかないときは、こちらを押してください</span></div>
+    <div id="cur-paste-status" class="notice ${pasteStatus.kind === 'ok' ? '' : 'warn'}" style="margin-top:6px" ${pasteStatus.msg ? '' : 'hidden'}>${esc(pasteStatus.msg)}</div>
     <p class="help" style="margin:6px 0 0">学校のパソコンでファイルを選べないときは、こちらを使ってください。カリキュラム（WordやGoogleドキュメント）を開き、表の全体をなぞって選んで Ctrl＋C でコピーし、上の欄に貼り付けます。2ページにわたる表も、まとめて選んでください。</p></div>
   <div class="card sheet-card"><div class="card-head"><b>Googleドキュメントから読み込む</b></div>
     <div class="adder" style="margin:6px 0 0"><input id="f-curdoc" type="url" placeholder="https://docs.google.com/document/d/…" value="${esc(curDocUrl)}" style="flex:1;min-width:12em">
@@ -781,21 +784,64 @@ $('#panel').addEventListener('drop', async (e) => {
 });
 
 // ⑥：カリキュラムの表を貼り付けたとき（貼り付けたデータの中の表＝HTMLを読む）
+// 結果は、すぐ消えるお知らせだけでなく、貼り付けの欄の下にも残す（何が起きたか分かるように）
+function showPasteStatus(msg, kind) {
+  pasteStatus = { msg, kind };
+  const el = document.querySelector('#cur-paste-status');
+  if (el) { el.textContent = msg; el.hidden = false; el.className = 'notice' + (kind === 'ok' ? '' : ' warn'); }
+}
+// 受け取ったデータ（html・文字・画像があるか）から、表を読み込む
+async function importPasted(html, text, hasImage) {
+  const what = [html ? '書式つきの文字' : '', text ? '文字' : '', hasImage ? '画像' : ''].filter(Boolean).join('・') || 'なし';
+  if (!html || !/<table/i.test(html)) {
+    showPasteStatus(`表が見つかりませんでした（受け取ったもの：${what}）。`
+      + (hasImage && !text ? '画像（スクリーンショット）は読み込めません。' : '')
+      + (text && !html ? '文字だけで、表の形が入っていませんでした。Wordで表の全体をなぞって選び、Ctrl＋C でコピーし直してください。' : '')
+      + (!text && !html && !hasImage ? 'コピーができていないようです。Wordで表を選んで、Ctrl＋C を押してから貼り付けてください。' : ''), 'warn');
+    return;
+  }
+  const g = state.data.grade;
+  const before = curriculum[g];
+  await importCurriculum({ html }, '貼り付けた表', false);
+  if (curriculum[g] && curriculum[g] !== before) showPasteStatus(`読み込みました：${curriculum[g].subjects.length}教科（${curriculum[g].subjects.map((x) => x.label).join('・')}）`, 'ok');
+  else showPasteStatus('表はありましたが、カリキュラムとして読み込めませんでした。上か下に出ている案内を見てください（「４月、５月…」の見出しの行もいっしょに選んでいるか、確かめてください）。', 'warn');
+}
 $('#panel').addEventListener('paste', async (e) => {
   if (e.target.id !== 'f-curpaste') return;
   e.preventDefault();
-  const html = e.clipboardData.getData('text/html');
-  if (!html || !/<table/i.test(html)) {
-    toast('貼り付けたものの中に、表が見つかりませんでした。カリキュラムの表をなぞって選び、コピーしてから貼り付けてください。'
-      + (e.clipboardData.types.includes('Files') ? '（画像は読み込めません）' : ''));
-    return;
-  }
-  await importCurriculum({ html }, '貼り付けた表', false);
+  try {
+    const cd = e.clipboardData;
+    if (!cd) { showPasteStatus('このブラウザでは、貼り付けたものを読めませんでした。「コピーした表を読み込む（ボタンで）」を押してみてください。', 'warn'); return; }
+    const types = Array.from(cd.types || []);
+    await importPasted(cd.getData('text/html'), cd.getData('text/plain'), types.includes('Files'));
+  } catch (err) { showPasteStatus('貼り付けたものを読めませんでした（' + (err && err.message || err) + '）', 'warn'); }
 });
+// 貼り付けの合図なしに文字だけが入ったとき（パソコンの設定によっては、こうなることがある）
+$('#panel').addEventListener('input', (e) => {
+  if (e.target.id !== 'f-curpaste' || !e.target.value) return;
+  e.target.value = '';
+  showPasteStatus('文字だけが入り、表の形が入っていませんでした。「コピーした表を読み込む（ボタンで）」を押してみてください。', 'warn');
+});
+// ボタンで、クリップボードから読む（Ctrl＋V が使えないとき）
+async function readClipboardTable() {
+  if (!navigator.clipboard || !navigator.clipboard.read) { showPasteStatus('このブラウザでは、ボタンでの読み込みが使えません。欄をクリックして Ctrl＋V で貼り付けてください。', 'warn'); return; }
+  try {
+    let html = ''; let text = ''; let hasImage = false;
+    for (const item of await navigator.clipboard.read()) {
+      if (item.types.includes('text/html')) html = await (await item.getType('text/html')).text();
+      if (item.types.includes('text/plain')) text = await (await item.getType('text/plain')).text();
+      if (item.types.some((t) => t.startsWith('image/'))) hasImage = true;
+    }
+    await importPasted(html, text, hasImage);
+  } catch (err) {
+    showPasteStatus('クリップボードを読めませんでした。ブラウザに「クリップボードの読み取り」を聞かれたら「許可」を押してください。学校のパソコンの設定で止められている場合は、読み込めません。（' + (err && err.name || err) + '）', 'warn');
+  }
+}
 
 $('#panel').addEventListener('click', async (e) => {
   if (e.target.id === 'btn-sheet') { await loadSheet($('#f-sheet').value); return; }
   if (e.target.id === 'btn-curdoc') { await loadCurDoc($('#f-curdoc').value); return; }
+  if (e.target.id === 'btn-curclip') { await readClipboardTable(); return; }
   const t = e.target.closest('button'); if (!t) return;
   const d = state.data; const i = Number(t.dataset.i);
   if (t.id === 'btn-reextract') { await runExtract(); return; }
