@@ -287,7 +287,7 @@ function boxIllustField() {
   return `<div class="card" style="margin-top:14px"><div class="card-head"><b>行事予定の枠の下の絵</b></div>
     <div class="ill-set"><div class="ill-box box-box">${cur ? `<img src="${urlOf(cur)}" class="${own.includes(cur) ? 'gray' : ''}" alt="">` : '<span>絵なし</span>'}</div>
     <label>絵 <select id="f-boxchoice">${o('', `${m}月の絵（最初からある絵）`)}${own.map((id) => o(id, `取り込んだ${illLabel(m, id)}`)).join('')}${o('none', 'なし')}</select></label></div>
-    <p class="help" style="margin:6px 0 0">${m === 11 ? '11月は、11月号のきのこの絵です。' : ''}取り込んだ絵（⑤2ページ目の「季節のイラスト」で入れた絵）からも選べます。選んだ絵は2ページ目には使いません。</p></div>`;
+    <p class="help" style="margin:6px 0 0">取り込んだ絵（⑤2ページ目の「季節のイラスト」で入れた絵）からも選べます。選んだ絵は2ページ目には使いません。</p></div>`;
 }
 
 // ---------- Googleスプレッドシート（共有リンク）から行事予定を読む ----------
