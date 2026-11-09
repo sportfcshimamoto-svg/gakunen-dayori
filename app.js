@@ -17,7 +17,9 @@ import {
 
 const STORE_KEY = 'gakunen-dayori:v1';
 const ILLUST_DIR = 'assets/illust/';
-const BASE_ILLUST = ['logo.png', 'kinoko.jpeg', 'bears.jpeg', 'mascot-ine-small.jpeg', 'mascot-ine.jpeg', 'mascot-taru.jpeg'];
+const BASE_ILLUST = ['logo.png'];
+// 公開版から外した絵。前の保存ファイルに名前が残っていても、Wordを作れるように読み飛ばす
+const REMOVED_ILLUST = /^(kinoko|bears|mascot-[a-z-]+)\.jpeg$/;
 const SUBJECTS = ['国語', '社会', '算数', '理科', '音楽', '図工', '家庭', '体育', '外国語', '道徳', '総合'];
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -70,6 +72,7 @@ function newsletterData() {
   d.sections = (d.sections || []).map((s) => {
     const t = { ...s };
     delete t.photoRows; delete t.photoOff;
+    for (const k of ['titleIllust', 'endIllust']) if (REMOVED_ILLUST.test(t[k] || '')) delete t[k];
     t.photos = (s.photos || []).filter((id) => photoMeta.has(id) && !(s.photoOff || []).includes(id));
     return t;
   });
