@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<!-- 通信の制限：このページの素材以外には接続できないようにする -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>週案にメニューを入れる</title>
+<link rel="stylesheet" href="jisu.css">
+</head>
+<body>
+<header class="topbar">
+  <nav class="pages"><a class="on" href="menu.html">週案にメニューを入れる</a><a href="shuan.html">週案作成</a><a href="index.html">授業時数算出シート自動入力</a></nav>
+  <p>週案（Googleスプレッドシート）に「週案 → 週のタブを作る」のメニューを入れます。入れるのは1回だけ。そのあとは週案の中だけでタブが作れます。</p>
+</header>
+<main>
+  <section class="step">
+    <h2><span class="num">1</span>プログラムをコピーする</h2>
+    <div class="row"><button id="copy" class="primary" disabled>読み込み中…</button><span id="msg" class="help"></span></div>
+  </section>
+  <section class="step">
+    <h2><span class="num">2</span>週案に貼る</h2>
+    <ol>
+      <li>週案を開き、上のメニューの「<b>拡張機能</b>」→「<b>Apps Script</b>」を押す（新しいタブが開く）</li>
+      <li>真ん中の <code>function myFunction() { }</code> をクリックし、<b>Ctrl + A</b> → <b>Delete</b> で消す</li>
+      <li><b>Ctrl + V</b> で貼り、上の 💾（保存）を押す</li>
+    </ol>
+  </section>
+  <section class="step">
+    <h2><span class="num">3</span>はじめの1回だけ、動かして許可する</h2>
+    <ol>
+      <li>Apps Script の画面の上で、「▶ 実行」の右の欄を「<b>onOpen</b>」にして「<b>▶ 実行</b>」を押す</li>
+      <li>「承認が必要です」と出たら「権限を確認」→ 自分のアカウント →（「確認されていません」と出たら「詳細」→「移動」）→「許可」</li>
+      <li>週案のタブにもどると、上のメニューに「<b>週案</b>」が出ます</li>
+    </ol>
+    <p class="help">「承認」のところで止められて進めないときは、学校のアカウントでは使えません。「週案作成」のやり方を使ってください。</p>
+  </section>
+  <section class="step">
+    <h2><span class="num">4</span>使う</h2>
+    <p>週案のメニュー「<b>週案</b>」→「<b>週のタブを作る</b>」。右に出るパネルで、① 1組・2組の時間割を貼る ② 期間を選ぶ →「週のタブを作る」。</p>
+  </section>
+</main>
+<script src="menu.js"></script>
+</body>
+</html>
