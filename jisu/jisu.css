@@ -54,3 +54,6 @@ table.grid td select { font-size: 12px; padding: 2px; }
 .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #222; color: #fff; padding: 10px 16px; border-radius: 8px; max-width: 90vw; font-size: 14px; z-index: 10; }
 .copyhow { padding-left: 1.4em; line-height: 1.7; }
 table.copyruns td { vertical-align: middle; }
+.quick { margin-top: 10px; padding: 12px 14px; border: 2px solid var(--accent); border-radius: 10px; background: #fff; }
+.quick .help { margin: 6px 0 0; }
+button.big { font-size: 1.1em; padding: 10px 22px; }

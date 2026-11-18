@@ -15,7 +15,7 @@ const st = {
   shuanBook: null, shuanAt: '', weeks: [], skipped: [],
   jisuBook: null, jisuName: '', cands: [], target: '', className: '',
   picked: new Set(), loading: false,
-  copyT: null, copied: null,   // コピーで入れるときの「時数表の形」（ファイルを読まずに、ふつうの授業時数算出シートの形を使う）
+  copyT: null, copied: false,   // コピーで入れるときの「時数表の形」（ファイルを読まずに、ふつうの授業時数算出シートの形を使う）
 };
 // 入れ方：'copy' = コピーして時数表に貼る（学校のパソコンはファイルを選べないので、こちらがふつう）／'file' = Excelファイルを選ぶ
 const mode = () => (saved.mode === 'file' ? 'file' : 'copy');
@@ -130,25 +130,35 @@ async function apply() {
 }
 
 // ---------- コピーして貼る（ファイルを選ばない） ----------
-// 選んだ週を、続いている週ごと（夏休み・冬休みで切れる）のかたまりにする。時数表でも続いた行に並んでいるので、まとめて貼れる
-function runs(ps) {
-  const out = [];
+// 授業時数算出シートは、夏休み・冬休みも含めて「1週 = 1行」でカレンダーどおりに並んでいる。
+// だから、選んだ最初の週から最後の週までを、とんでいる週は空の行にして1回でコピーすれば、1回の Ctrl+V で全部入る。
+const addDays = (isoDate, n) => { const d = new Date(isoDate + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+function copyBlock(ps) {
   const sorted = [...ps].sort((a, b) => a.week.monday.localeCompare(b.week.monday));
-  for (const p of sorted) {
-    const last = out.at(-1)?.at(-1);
-    const gap = last ? (new Date(p.week.monday) - new Date(last.week.monday)) / 86400000 : 0;
-    if (last && gap === 7) out.at(-1).push(p); else out.push([p]);
+  const by = new Map(sorted.map((p) => [p.week.monday, p]));
+  const lines = []; const blanks = [];
+  if (!sorted.length) return { lines, blanks, first: '', last: '' };
+  const first = sorted[0].week.monday, last = sorted.at(-1).week.monday;
+  for (let m = first; m <= last; m = addDays(m, 7)) {
+    const p = by.get(m);
+    if (p) lines.push(DAYS.flatMap((d) => SLOTS.map((s) => p.cells.find((c) => c.day === d && c.slot === s).code || '')).join('\t'));
+    else { lines.push(new Array(DAYS.length * SLOTS.length).fill('').join('\t')); blanks.push(m); }
   }
-  return out;
+  return { lines, blanks, first, last };
 }
-// 1週 = 1行。月〜金 ×（モジュール・1〜6校時）の35マスをタブで区切る（時数表の L列〜AT列 と同じ並び）
-const runText = (run) => run.map((p) => DAYS.flatMap((d) => SLOTS.map((s) => p.cells.find((c) => c.day === d && c.slot === s).code || '')).join('\t')).join('\r\n');
+// 空にする週を「7月20日〜8月17日の週」のように続いたかたまりで言う
+function blankSpans(blanks) {
+  const out = [];
+  for (const m of blanks) { const l = out.at(-1); if (l && addDays(l[1], 7) === m) l[1] = m; else out.push([m, m]); }
+  return out.map(([a, b]) => (a === b ? `${md(a)}の週` : `${md(a)}〜${md(b)}の週`));
+}
 
-async function copyRun(i) {
-  const run = runs(plans())[i];
-  if (!run) return;
-  if (run.some((p) => p.cells.some((c) => c.status === 'unknown'))) { toast('赤いマスがまだ残っています。教科を選んでください'); return; }
-  const text = runText(run);
+async function copyAll() {
+  const ps = plans();
+  if (!ps.length) return;
+  if (ps.some((p) => p.cells.some((c) => c.status === 'unknown'))) { toast('赤いマスがまだ残っています。下の表で教科を選んでください'); return; }
+  const { lines, first } = copyBlock(ps);
+  const text = lines.join('\r\n');
   let ok = false;
   try { await navigator.clipboard.writeText(text); ok = true; } catch { /* 下のやり方でためす */ }
   if (!ok) {
@@ -157,8 +167,8 @@ async function copyRun(i) {
     try { ok = document.execCommand('copy'); } catch { ok = false; }
     ta.remove();
   }
-  st.copied = i;
-  toast(ok ? `コピーしました。Excelで「${md(run[0].week.monday)}の週」の行の、月曜日「モジュール」のマスをクリックして、Ctrl + V で貼ってください` : 'コピーできませんでした。もう一度ボタンを押してください', ok ? 10000 : 6000);
+  st.copied = ok;
+  toast(ok ? `コピーしました。Excelで「${md(first)}の週」の行の、月曜日「モジュール」のマスをクリックして、Ctrl + V で貼ってください` : 'コピーできませんでした。もう一度ボタンを押してください', ok ? 12000 : 6000);
   render();
 }
 
@@ -180,6 +190,7 @@ function render() {
     </div>
     <p class="help">週案のGoogleスプレッドシートのリンクを貼ります。共有は「リンクを知っている全員（閲覧者）」にしておきます。リンクはこのパソコンに覚えておきます。</p>
     ${ready1 ? `<p class="ok">✓ ${st.weeks.length}週分を読み込みました（${esc(st.shuanAt)}）</p>
+      ${quickHtml(ps, unknown)}
       ${st.skipped.length ? `<details><summary>読まなかったタブ（${st.skipped.length}こ）</summary><ul>${st.skipped.map((s) => `<li>${esc(s.name)}：${esc(s.reason)}</li>`).join('')}</ul></details>` : ''}` : ''}
   </section>
 
@@ -253,33 +264,40 @@ function gridHtml(p) {
     <table class="grid"><tr><th></th>${DAYS.map((d) => `<th>${d}</th>`).join('')}</tr>${rows}</table></div>`;
 }
 
+function copyBtn(unknown) {
+  return unknown ? `<span class="ng">赤いマスがあと${unknown}こ（下の4で教科を選んでください）</span>`
+    : `<button class="primary big" data-copyall>${st.copied ? 'もう一度コピー' : '時数表用にコピー'}</button>${st.copied ? ' <span class="ok">✓ コピーしました</span>' : ''}`;
+}
+// 読み込めたら、いちばん上ですぐコピーできるようにする（ふだんはここだけで終わる）
+function quickHtml(ps, unknown) {
+  if (mode() !== 'copy' || !ps.length) return '';
+  const { first, last } = copyBlock(ps);
+  return `<div class="quick">
+    <div class="row">${copyBtn(unknown)}</div>
+    <p class="help">${esc(st.className)}・${md(first)}の週 〜 ${md(last)}の週。コピーしたら、Excelの「実施計画」で <b>${md(first)}の週</b> の行の、<b>月曜日の「モジュール」</b>のマスをクリックして <b>Ctrl + V</b>。</p>
+  </div>`;
+}
+
 function copyHtml(ps) {
-  const rs = runs(ps);
+  const unknown = ps.reduce((n, p) => n + p.cells.filter((c) => c.status === 'unknown').length, 0);
+  const { lines, blanks, first, last } = copyBlock(ps);
+  const spans = blankSpans(blanks);
   return `<section class="step">
     <h2><span class="num">5</span>コピーして、時数表に貼る</h2>
     <ol class="help copyhow">
       <li>学校の授業時数算出シート（Excel）を開き、書きこむタブ（「実施計画」）を出しておきます。</li>
-      <li>下の「コピー」ボタンを押します。</li>
-      <li>Excelで、<b>いちばん上の週の行</b>（左の小さなカレンダーの日付で見つけます）の、<b>月曜日の「モジュール」のマス</b>（ふつうはL列）をクリックして、<b>Ctrl + V</b> で貼ります。</li>
-      <li>夏休み・冬休みで週がとぶところは、ボタンが分かれます。ボタンごとに 2〜3 をくり返します。</li>
+      <li>下の「時数表用にコピー」を押します。</li>
+      <li>Excelで、<b>${md(first)}の週の行</b>（左の小さなカレンダーの日付で見つけます）の、<b>月曜日の「モジュール」のマス</b>（ふつうはL列）をクリックして、<b>Ctrl + V</b> で貼ります。これで ${md(last)}の週まで、1回で全部入ります。</li>
     </ol>
-    <table class="weeks copyruns">
-    ${rs.map((run, i) => {
-      const bad = run.reduce((n, p) => n + p.cells.filter((c) => c.status === 'unknown').length, 0);
-      const first = run[0].week.monday, last = run.at(-1).week.monday;
-      const span = run.length === 1 ? `${md(first)}の週（1週）` : `${md(first)}の週 〜 ${md(last)}の週（${run.length}週）`;
-      return `<tr><td>${span}</td>
-        <td><b>${md(first)}の週</b>の行の、月曜「モジュール」をクリックして貼る</td>
-        <td>${bad ? `<span class="ng">赤いマスがあと${bad}こ</span>` : `<button class="primary" data-copy="${i}">${st.copied === i ? 'もう一度コピー' : 'コピー'}</button>`}${st.copied === i ? ' <span class="ok">✓ コピーしました</span>' : ''}</td></tr>`;
-    }).join('')}
-    </table>
+    <div class="row">${copyBtn(unknown)}</div>
+    <p class="help">${lines.length}行（${md(first)}の週 〜 ${md(last)}の週）。${spans.length ? `週案にない週（${spans.map(esc).join('・')}）は、空のまま貼ります。夏休み・冬休みの行はもともと空なので、そのままで大丈夫です。` : ''}</p>
     <p class="help">貼ったあと、Excelで月曜日の朝学や1校時の文字が、上の表と同じになっているか見てください。まちがえたときは、Excelで Ctrl + Z を押すと元にもどります。</p>
   </section>`;
 }
 
 function bind() {
-  document.querySelectorAll('input[name=mode]').forEach((r) => r.addEventListener('change', () => { saved.mode = r.value; save(); st.copied = null; reparse(); render(); }));
-  document.querySelectorAll('button[data-copy]').forEach((b) => b.addEventListener('click', () => copyRun(Number(b.dataset.copy))));
+  document.querySelectorAll('input[name=mode]').forEach((r) => r.addEventListener('change', () => { saved.mode = r.value; save(); st.copied = false; reparse(); render(); }));
+  document.querySelectorAll('button[data-copyall]').forEach((b) => b.addEventListener('click', copyAll));
   $('#load')?.addEventListener('click', () => loadShuan($('#url').value));
   $('#url')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') loadShuan($('#url').value); });
   $('#file')?.addEventListener('change', (e) => { const f = e.target.files[0]; if (f) loadJisu(f); });
@@ -300,3 +318,5 @@ function bind() {
 }
 
 render();
+// 前に読み込んだ週案があれば、ページを開いたときに自動で読み込む（ボタンを押さなくてよい）
+if (saved.sheetUrl) loadShuan(saved.sheetUrl);
