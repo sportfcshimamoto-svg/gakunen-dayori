@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <!-- 通信の制限：このページの素材以外には接続できないようにする -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>学年のお仕事AIアプリ</title>
+<title>カスタネット</title>
 <style>
   /* デザインの考え方（グラフィックデザイン・編集デザインの考え方を取り入れる）
      ・紙のような生成り色の地に、墨色の文字。見出しは明朝、本文はゴシック（明朝＝上品・編集的、ゴシック＝読みやすい）
@@ -35,13 +35,27 @@
   .brand { font-family: var(--mincho); font-weight: 600; font-size: 19px; letter-spacing: .12em; }
 
   /* 見出し */
-  .hero { padding: 56px 0 44px; display: grid; grid-template-columns: auto 1fr; gap: 28px; align-items: end; }
+  .brand { cursor: default; }
+  .brand { font-size: 22px; letter-spacing: .14em; }
+  .hero { position: relative; padding: 56px 0 44px; display: grid; grid-template-columns: auto 1fr; gap: 28px; align-items: end; }
   .hero .eyebrow { grid-column: 1 / -1; font-size: 12px; letter-spacing: .32em; color: var(--sub); font-weight: 700; }
+  /* アプリの名前（カスタネット）は左上のロゴとして小さく。ページの主役は「今日は早く帰ろ」 */
   .hero h1 { margin: 0; font-family: var(--mincho); font-weight: 600; font-size: clamp(30px, 4.6vw, 52px); line-height: 1.35; letter-spacing: .06em; }
   .hero h1 em { font-style: normal; color: var(--shu); }
   /* お銚子とおちょこ：朱色の小さな絵。見出しの字の高さにそろえる */
   .hero h1 .note { display: inline-block; width: .95em; margin-left: .14em; color: var(--shu); vertical-align: -.08em; }
   .hero h1 .note svg { display: block; width: 100%; height: auto; }
+  /* 左上のロゴのカスタネット（朱と藍＝学校のカスタネット）。押すと鳴る。タイルを選んだときも音に合わせて閉じる */
+  .clapper { appearance: none; border: 0; background: none; padding: 0; cursor: pointer; border-radius: 8px; display: block; flex: none; }
+  .clapper:focus-visible { outline: 3px solid var(--shu); outline-offset: 4px; }
+  .clapper .mark { display: block; width: 44px; height: 44px; overflow: visible; }
+  .clapper .lid { transform-box: view-box; transform-origin: 4px 18px; transform: rotate(-16deg); }
+  .clapper.clap .lid { animation: clap .4s linear; }
+  @keyframes clap {
+    /* カン（15ミリ秒）・カン（185ミリ秒）で閉じる */
+    0% { transform: rotate(-12deg); } 4% { transform: rotate(0); } 24% { transform: rotate(-15deg); } 46% { transform: rotate(0); } 70% { transform: rotate(-20deg); } 100% { transform: rotate(-17deg); }
+  }
+  @media (prefers-reduced-motion: reduce) { .clapper.clap .lid { animation: none; } }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .hero p { margin: 0 0 10px; color: var(--sub); font-size: 14px; border-left: 2px solid var(--line); padding-left: 18px; max-width: 22em; }
 
@@ -105,14 +119,14 @@
 <body>
 <header>
   <div class="wrap">
-    <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect x="1" y="1" width="30" height="30" rx="8" fill="#1f3a5f"/><circle cx="22" cy="10" r="4" fill="#c4502f"/><path d="M8 22h16M8 17h10" stroke="#f5f1e8" stroke-width="2.4" stroke-linecap="round"/></svg>
-    <span class="brand">学年のお仕事AIアプリ</span>
+    <button class="clapper" type="button" aria-label="カスタネットを鳴らす"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><ellipse cx="16.5" cy="22.5" rx="13" ry="5" fill="#162b47"/><ellipse cx="16.5" cy="21" rx="13" ry="5" fill="#1f3a5f"/><g class="lid"><ellipse cx="16.5" cy="17" rx="13" ry="5" fill="#a23f23"/><ellipse cx="16.5" cy="15.5" rx="13" ry="5" fill="#c4502f"/></g><rect x="2" y="13" width="4.4" height="12" rx="2.2" fill="none" stroke="#1d2430" stroke-width="1.6"/></svg></button>
+    <span class="brand">カスタネット</span>
   </div>
 </header>
 
 <main class="wrap">
   <section class="hero">
-    <div class="eyebrow">GAKUNEN WORKS</div>
+    <div class="eyebrow">学年の先生のお仕事アプリ</div>
     <h1>今日は<br><em>早く</em>帰ろ<span class="note" aria-hidden="true"><svg viewBox="0 0 48 48"><path d="M13 4h7v1.5c0 1.5-1 2.5-1 4.5 0 3 9 9 9 20 0 9-5.5 14-11.5 14S5 38.5 5 29.5c0-11 9-17 9-20 0-2-1-3-1-4.5z" fill="currentColor"/><path d="M7.4 24.5h18.2" stroke="#f5f1e8" stroke-width="1.6"/><path d="M31 33h15l-2.6 8.6h-9.8z" fill="currentColor"/><path d="M35.6 41.6h5.8v2h-5.8z" fill="currentColor"/></svg></span><span class="sr">（お銚子とおちょこ）</span></h1>
     <p>学年の先生の、毎週・毎月のお仕事を手伝います。<br>使いたいものを選んでください。</p>
   </section>
@@ -171,5 +185,6 @@
     <span>週案や、選んだファイル・写真は、このパソコンの中だけで処理します。</span>
   </div>
 </footer>
+<script src="top.js"></script>
 </body>
 </html>
