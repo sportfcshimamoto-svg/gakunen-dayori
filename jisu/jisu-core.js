@@ -178,8 +178,8 @@ function mondayCandidates(name, mondayDay, schoolYear) {
   let digits = norm(name);
   const slash = /^(\d{1,2})(?:\/|月)(\d{1,2})日?$/.exec(digits);   // 「12/14」「12月14日」の形
   if (slash) digits = slash[1] + slash[2].padStart(2, '0');
-  if (!/^\d{2,4}$/.test(digits) || !mondayDay) return [];
-  const out = [];
+  if (!/^\d{2,4}$/.test(digits)) return [];
+  const out = [], byName = [];
   for (const k of slash ? [slash[1].length] : [1, 2]) {
     const m = Number(digits.slice(0, k)), d = Number(digits.slice(k));
     if (digits.length - k < 1 || digits.length - k > 2 || m < 1 || m > 12 || d < 1 || d > 31) continue;
@@ -188,10 +188,13 @@ function mondayCandidates(name, mondayDay, schoolYear) {
     if (named.getUTCMonth() !== m - 1) continue;
     for (let back = 0; back <= 4; back++) {
       const mon = new Date(named.getTime() - back * 86400000);
-      if (mon.getUTCDay() === 1 && mon.getUTCDate() === mondayDay) out.push(iso(mon));
+      if (mon.getUTCDay() !== 1) continue;
+      byName.push(iso(mon));
+      if (mon.getUTCDate() === mondayDay) out.push(iso(mon));
     }
   }
-  return [...new Set(out)];
+  // 週案の中の日付が名前と合えばそれ。日付が書いてない・ひな形のまま直っていない（どのタブも同じ日付など）ときは、タブの名前を信じる
+  return [...new Set(out.length ? out : byName)];
 }
 
 /** 週案のタブを読む。週ごとに { name, monday, ab, classes: { '1組': { 月: {朝,1..6: 元の文字}, … } } } */
@@ -208,6 +211,10 @@ export function readShuan(book, schoolYear) {
       if (cm) {
         const dayCols = {};
         for (let k = 1; k <= 7; k++) { const dv = norm(at(sh, c + k, r)); if (DAYS.includes(dv)) dayCols[dv] = c + k; }
+        // 見出しの1マスにメモなどが書かれていても、となりから月〜金が順に並んでいれば、その並びで読む
+        if (Object.keys(dayCols).length < 5 && DAYS.filter((d, i) => norm(at(sh, c + 1 + i, r)) === d).length >= 4) {
+          DAYS.forEach((d, i) => { dayCols[d] = c + 1 + i; });
+        }
         if (Object.keys(dayCols).length === 5) classes[v] = { labelCol: c, headRow: r, dayCols };
       }
       if (/^[AB]週$/.test(v) && !ab) ab = v[0];

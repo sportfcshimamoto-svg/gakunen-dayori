@@ -15,18 +15,30 @@ const st = {
   shuanBook: null, shuanAt: '', weeks: [], skipped: [],
   jisuBook: null, jisuName: '', cands: [], target: '', className: '',
   picked: new Set(), loading: false,
+  copyT: null, copied: null,   // コピーで入れるときの「時数表の形」（ファイルを読まずに、ふつうの授業時数算出シートの形を使う）
 };
+// 入れ方：'copy' = コピーして時数表に貼る（学校のパソコンはファイルを選べないので、こちらがふつう）／'file' = Excelファイルを選ぶ
+const mode = () => (saved.mode === 'file' ? 'file' : 'copy');
+
+// ふつうの授業時数算出シートの形：月〜金それぞれ「モジュール＋1〜6校時」が L列〜AT列 に続けて並ぶ
+const COLS = 'L M N O P Q R S T U V W X Y Z AA AB AC AD AE AF AG AH AI AJ AK AL AM AN AO AP AQ AR AS AT'.split(' ');
+const OPTIONS = ['国', '社', '算', '理', '生', '音', '図', '家', '体', '外', '道', '特', '総', '児', 'ク', '行'];
+function makeCopyTarget() {
+  const days = DAYS.map((_, i) => ({ module: COLS[i * 7], periods: COLS.slice(i * 7 + 1, i * 7 + 7) }));
+  const weeks = new Map(st.weeks.map((w, i) => [w.monday, { row: i + 1, label: `${md(w.monday)}の週` }]));
+  return { sheet: { name: '', cells: new Map() }, info: { ok: true, year: schoolYear(), days, weeks, options: OPTIONS } };
+}
 
 function toast(msg, ms = 4000) {
   const t = $('#toast'); t.textContent = msg; t.hidden = false;
   clearTimeout(toast.t); toast.t = setTimeout(() => { t.hidden = true; }, ms);
 }
 const schoolYear = () => {
-  const c = st.cands.find((x) => x.sheet.name === st.target) || st.cands[0];
+  const c = mode() === 'file' && (st.cands.find((x) => x.sheet.name === st.target) || st.cands[0]);
   if (c) return c.info.year;
   const d = new Date(); return d.getMonth() + 1 >= 4 ? d.getFullYear() : d.getFullYear() - 1;
 };
-const targetOf = () => st.cands.find((x) => x.sheet.name === st.target) || null;
+const targetOf = () => (mode() === 'copy' ? st.copyT : st.cands.find((x) => x.sheet.name === st.target) || null);
 const md = (isoDate) => { const [, m, d] = isoDate.split('-').map(Number); return `${m}月${d}日`; };
 
 // ---------- 読み込み ----------
@@ -77,6 +89,7 @@ function reparse() {
   if (!st.shuanBook) return;
   const r = readShuan(st.shuanBook, schoolYear());
   st.weeks = r.weeks; st.skipped = r.skipped;
+  st.copyT = makeCopyTarget();
   const classes = [...new Set(st.weeks.flatMap((w) => Object.keys(w.classes)))];
   if (!classes.includes(st.className)) st.className = classes.includes(saved.className) ? saved.className : classes[0] || '';
   // はじめは、時数表に週があるものをすべて選んでおく
@@ -116,6 +129,39 @@ async function apply() {
   }
 }
 
+// ---------- コピーして貼る（ファイルを選ばない） ----------
+// 選んだ週を、続いている週ごと（夏休み・冬休みで切れる）のかたまりにする。時数表でも続いた行に並んでいるので、まとめて貼れる
+function runs(ps) {
+  const out = [];
+  const sorted = [...ps].sort((a, b) => a.week.monday.localeCompare(b.week.monday));
+  for (const p of sorted) {
+    const last = out.at(-1)?.at(-1);
+    const gap = last ? (new Date(p.week.monday) - new Date(last.week.monday)) / 86400000 : 0;
+    if (last && gap === 7) out.at(-1).push(p); else out.push([p]);
+  }
+  return out;
+}
+// 1週 = 1行。月〜金 ×（モジュール・1〜6校時）の35マスをタブで区切る（時数表の L列〜AT列 と同じ並び）
+const runText = (run) => run.map((p) => DAYS.flatMap((d) => SLOTS.map((s) => p.cells.find((c) => c.day === d && c.slot === s).code || '')).join('\t')).join('\r\n');
+
+async function copyRun(i) {
+  const run = runs(plans())[i];
+  if (!run) return;
+  if (run.some((p) => p.cells.some((c) => c.status === 'unknown'))) { toast('赤いマスがまだ残っています。教科を選んでください'); return; }
+  const text = runText(run);
+  let ok = false;
+  try { await navigator.clipboard.writeText(text); ok = true; } catch { /* 下のやり方でためす */ }
+  if (!ok) {
+    const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.append(ta); ta.select();
+    try { ok = document.execCommand('copy'); } catch { ok = false; }
+    ta.remove();
+  }
+  st.copied = i;
+  toast(ok ? `コピーしました。Excelで「${md(run[0].week.monday)}の週」の行の、月曜日「モジュール」のマスをクリックして、Ctrl + V で貼ってください` : 'コピーできませんでした。もう一度ボタンを押してください', ok ? 10000 : 6000);
+  render();
+}
+
 // ---------- 画面 ----------
 function render() {
   const t = targetOf();
@@ -138,10 +184,16 @@ function render() {
   </section>
 
   <section class="step">
-    <h2><span class="num">2</span>授業時数表（Excel）を選ぶ</h2>
-    <div class="row"><label class="btn">Excelファイルを選ぶ<input id="file" type="file" accept=".xlsx" hidden></label>
+    <h2><span class="num">2</span>授業時数表への入れ方を選ぶ</h2>
+    <div class="row">
+      <label><input type="radio" name="mode" value="copy" ${mode() === 'copy' ? 'checked' : ''}> コピーして時数表に貼る（学校のパソコンはこちら）</label>
+      <label><input type="radio" name="mode" value="file" ${mode() === 'file' ? 'checked' : ''}> Excelファイルを選ぶ</label>
+    </div>
+    ${mode() === 'copy' ? `<p class="help">ファイルを選ばずに使えます。最後に「コピー」ボタンを押して、学校の時数表（Excel）に自分で貼ります。色・プルダウン・集計の式はそのまま残ります。</p>` : `
+    <div class="row" style="margin-top:8px"><label class="btn">Excelファイルを選ぶ<input id="file" type="file" accept=".xlsx" hidden></label>
       ${st.jisuName ? `<span>${esc(st.jisuName)}</span>` : ''}</div>
-    ${st.cands.length ? `
+    <p class="help">学校のパソコンで「このサイトへのアップロードは許可されていません」と出るときは、上の「コピーして時数表に貼る」を使ってください。</p>`}
+    ${mode() === 'file' && st.cands.length ? `
       <div class="row" style="margin-top:8px">書き込むタブ：
         <select id="target">
           ${st.target ? '' : '<option value="">選んでください</option>'}
@@ -155,6 +207,10 @@ function render() {
     ${ready1 && ready2 ? `
     <div class="row">組：${classes.map((c) => `<label><input type="radio" name="cls" value="${esc(c)}" ${c === st.className ? 'checked' : ''}> ${esc(c)}</label>`).join(' ')}</div>
     <div class="row" style="margin:8px 0"><button id="all">すべて選ぶ</button><button id="none">すべて外す</button></div>
+    ${mode() === 'copy' ? `<table class="weeks"><tr><th></th><th>週案のタブ</th><th>週</th><th>A/B</th></tr>
+    ${st.weeks.map((w) => `<tr><td><input type="checkbox" data-week="${w.monday}" ${st.picked.has(w.monday) ? 'checked' : ''}></td>
+        <td>${esc(w.name)}</td><td>${md(w.monday)}〜</td><td>${w.ab ? w.ab + '週' : '―'}</td></tr>`).join('')}
+    </table>` : `
     <table class="weeks"><tr><th></th><th>週案のタブ</th><th>週</th><th>A/B</th><th>時数表</th><th>いまの時数表</th></tr>
     ${st.weeks.map((w) => {
       const hit = t.info.weeks.get(w.monday);
@@ -164,17 +220,18 @@ function render() {
         <td>${hit ? esc(hit.label) : '時数表にこの週がありません'}</td>
         <td>${!hit ? '' : filled ? `<span class="tag over">入力済み（${filled}マス）→ 上書き</span>` : '<span class="tag">空</span>'}</td></tr>`;
     }).join('')}
-    </table>` : '<p class="help">1と2が終わると選べます。</p>'}
+    </table>`}` : `<p class="help">${mode() === 'copy' ? '1で週案を読み込むと選べます。' : '1と2が終わると選べます。'}</p>`}
   </section>
 
   <section class="step ${ps.length ? '' : 'off'}">
     <h2><span class="num">4</span>入る文字を確かめる</h2>
     ${ps.length ? `
     <p class="help">大きい字が時数表に入る文字、小さい字が週案に書いてあることばです。「→」があるときは変更後（右側）を使います。</p>
-    <p class="legend"><span style="background:var(--new)">いまの時数表と変わる</span><span style="background:var(--warn)">A週/B週で決めた（念のため確認）</span><span style="background:var(--bad)">教科が分からない（選んでください）</span></p>
+    <p class="legend">${mode() === 'file' ? '<span style="background:var(--new)">いまの時数表と変わる</span>' : ''}<span style="background:var(--warn)">A週/B週で決めた（念のため確認）</span><span style="background:var(--bad)">教科が分からない（選んでください）</span></p>
     ${ps.map(gridHtml).join('')}` : '<p class="help">3で週を選ぶと、ここに出ます。</p>'}
   </section>
-  ${ps.length ? `<div class="final">
+  ${ps.length && mode() === 'copy' ? copyHtml(ps) : ''}
+  ${ps.length && mode() === 'file' ? `<div class="final">
     <button id="apply" class="primary" ${unknown ? 'disabled' : ''}>Excelに反映して保存</button>
     <span>${ps.length}週・${total}マス。${unknown ? `<span class="ng">赤いマスがあと${unknown}こあります</span>` : '新しいファイルとして保存します（元のファイルは変えません）。'}</span>
   </div>` : ''}`;
@@ -187,7 +244,7 @@ function gridHtml(p) {
     if (c.status === 'unknown') {
       return `<td class="unknown"><select data-word="${esc(c.word)}"><option value="">選ぶ</option>${opts.map((o) => `<option>${esc(o)}</option>`).join('')}<option value="-">入れない</option></select><span class="raw" title="${esc(c.raw)}">${esc(c.raw)}</span></td>`;
     }
-    const cls = c.status === 'ab' ? 'ab' : (c.code || '') !== (c.now || '') ? 'chg' : '';
+    const cls = c.status === 'ab' ? 'ab' : mode() === 'file' && (c.code || '') !== (c.now || '') ? 'chg' : '';
     const title = `週案：${c.raw || '（空）'}　いまの時数表：${c.now || '（空）'}`;
     return `<td class="${cls}" title="${esc(title)}"><span class="code">${esc(c.code) || '&nbsp;'}</span><span class="raw">${esc(c.raw)}</span></td>`;
   };
@@ -196,7 +253,33 @@ function gridHtml(p) {
     <table class="grid"><tr><th></th>${DAYS.map((d) => `<th>${d}</th>`).join('')}</tr>${rows}</table></div>`;
 }
 
+function copyHtml(ps) {
+  const rs = runs(ps);
+  return `<section class="step">
+    <h2><span class="num">5</span>コピーして、時数表に貼る</h2>
+    <ol class="help copyhow">
+      <li>学校の授業時数算出シート（Excel）を開き、書きこむタブ（「実施計画」）を出しておきます。</li>
+      <li>下の「コピー」ボタンを押します。</li>
+      <li>Excelで、<b>いちばん上の週の行</b>（左の小さなカレンダーの日付で見つけます）の、<b>月曜日の「モジュール」のマス</b>（ふつうはL列）をクリックして、<b>Ctrl + V</b> で貼ります。</li>
+      <li>夏休み・冬休みで週がとぶところは、ボタンが分かれます。ボタンごとに 2〜3 をくり返します。</li>
+    </ol>
+    <table class="weeks copyruns">
+    ${rs.map((run, i) => {
+      const bad = run.reduce((n, p) => n + p.cells.filter((c) => c.status === 'unknown').length, 0);
+      const first = run[0].week.monday, last = run.at(-1).week.monday;
+      const span = run.length === 1 ? `${md(first)}の週（1週）` : `${md(first)}の週 〜 ${md(last)}の週（${run.length}週）`;
+      return `<tr><td>${span}</td>
+        <td><b>${md(first)}の週</b>の行の、月曜「モジュール」をクリックして貼る</td>
+        <td>${bad ? `<span class="ng">赤いマスがあと${bad}こ</span>` : `<button class="primary" data-copy="${i}">${st.copied === i ? 'もう一度コピー' : 'コピー'}</button>`}${st.copied === i ? ' <span class="ok">✓ コピーしました</span>' : ''}</td></tr>`;
+    }).join('')}
+    </table>
+    <p class="help">貼ったあと、Excelで月曜日の朝学や1校時の文字が、上の表と同じになっているか見てください。まちがえたときは、Excelで Ctrl + Z を押すと元にもどります。</p>
+  </section>`;
+}
+
 function bind() {
+  document.querySelectorAll('input[name=mode]').forEach((r) => r.addEventListener('change', () => { saved.mode = r.value; save(); st.copied = null; reparse(); render(); }));
+  document.querySelectorAll('button[data-copy]').forEach((b) => b.addEventListener('click', () => copyRun(Number(b.dataset.copy))));
   $('#load')?.addEventListener('click', () => loadShuan($('#url').value));
   $('#url')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') loadShuan($('#url').value); });
   $('#file')?.addEventListener('change', (e) => { const f = e.target.files[0]; if (f) loadJisu(f); });

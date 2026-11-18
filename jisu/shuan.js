@@ -118,7 +118,10 @@ function render() {
         <td>${w.exists ? `${w.ab}週` : `<button class="abbtn" data-ab="${w.monday}">${w.ab}週</button>`}</td>
         <td>${w.exists ? '週案にもうあるので作りません' : ''}</td></tr>`).join('')}</table>
       ${okCount < CLASSES.length ? `<p class="ng">${CLASSES.filter((c) => !ps[c]?.ok).join('・')}の時間割がまだです。その組の教科は空のまま作ります。</p>` : ''}
-      <div class="row" style="margin-top:10px"><button id="make" class="primary" ${todo.length && okCount ? '' : 'disabled'}>週案を作る（${todo.length}週）</button></div>` : ''}
+      <div class="row" style="margin-top:10px"><button id="make" class="primary" ${todo.length && okCount ? '' : 'disabled'}>週案を作る（${todo.length}週）</button>
+        ${!okCount ? '<span class="ng">ボタンが押せないのは、上の1で時間割がまだ読み込めていないからです（貼ると、下に表が出ます）。</span>'
+          : !todo.length ? '<span class="ng">ボタンが押せないのは、この期間の週がもう全部週案にあるからです。期間を変えてください。</span>' : ''}</div>` : ''}
+    ${st.book && !ws.length ? `<p class="ng">${!st.from || !st.to ? '「この時間割を使う期間」の、はじめと終わりの日を両方入れると、作るボタンが出ます。' : 'はじめの日が終わりの日より後になっています。'}</p>` : ''}
     ${st.made ? `<div class="howto" style="margin-top:12px"><b>「${esc(st.made)}」を保存しました。週案への取り込み方：</b>
       <ol><li>週案のスプレッドシートで「ファイル」→「インポート」→「アップロード」で、このファイルを選ぶ</li>
       <li>「インポート場所」を<b>「新しいシートを挿入する」</b>にして「データをインポート」を押す</li></ol></div>` : ''}
