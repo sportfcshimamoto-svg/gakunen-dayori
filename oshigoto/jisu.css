@@ -1,0 +1,69 @@
+:root { --ink: #1d2430; --sub: #5d6472; --line: #ddd5c4; --bg: #f5f1e8; --card: #fff; --accent: #1f3a5f; --shu: #c4502f;
+  --mincho: "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "Noto Serif JP", serif; --warn: #fff4c2; --bad: #ffe0e0; --new: #e3f0ff; }
+* { box-sizing: border-box; }
+body { margin: 0; font-family: "Yu Gothic UI", "Meiryo", system-ui, sans-serif; color: var(--ink); background: var(--bg); font-size: 15px; }
+textarea { width: 100%; min-height: 9em; font: 13px/1.4 monospace; padding: 6px; }
+.week, #showtt { overflow-x: auto; }
+table.tt td, table.weeks td { white-space: nowrap; }
+table.tt { border-collapse: collapse; font-size: 13px; margin: 6px 0; }
+table.tt th, table.tt td { border: 1px solid var(--line); padding: 2px 6px; text-align: center; min-width: 56px; }
+table.tt th { background: #f0f2f5; }
+table.tt td.sep, table.tt th.sep { border-left: 3px solid #999; }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-top: 8px; }
+.two h3 { margin: 0 0 4px; font-size: 15px; }
+.abbtn { min-width: 3.5em; padding: 2px 8px; }
+.howto { background: #f3f8ff; border: 1px solid #c9dcf5; border-radius: 6px; padding: 8px 14px; font-size: 14px; }
+main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+.step { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; margin-bottom: 14px; }
+.step h2 { margin: 0 0 8px; font-size: 16px; }
+.step h2 .num { display: inline-block; width: 24px; height: 24px; line-height: 24px; text-align: center; border-radius: 50%; background: var(--accent); color: #fff; font-size: 13px; margin-right: 6px; }
+.step.off { opacity: .5; }
+.help { color: var(--sub); font-size: 13px; margin: 4px 0; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+input[type=url] { flex: 1; min-width: 14em; padding: 6px 8px; font-size: 14px; }
+button, .btn, select { font: inherit; font-size: 14px; padding: 6px 12px; border: 1px solid #aaa; border-radius: 6px; background: #fff; cursor: pointer; }
+button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+button:disabled { opacity: .45; cursor: default; }
+.ok { color: #18794e; font-weight: bold; }
+.ng { color: #b42318; font-weight: bold; }
+details { margin-top: 6px; font-size: 13px; color: var(--sub); }
+table.weeks { border-collapse: collapse; width: 100%; font-size: 14px; }
+table.weeks th, table.weeks td { border-bottom: 1px solid var(--line); padding: 5px 6px; text-align: left; }
+table.weeks tr.dis { color: #999; }
+.tag { display: inline-block; padding: 0 6px; border-radius: 4px; font-size: 12px; background: #eee; }
+.tag.over { background: var(--warn); }
+.week { margin: 14px 0 6px; }
+.week h3 { margin: 0 0 4px; font-size: 15px; }
+table.grid { border-collapse: collapse; font-size: 13px; }
+table.grid th, table.grid td { border: 1px solid var(--line); padding: 3px 5px; text-align: center; min-width: 92px; vertical-align: top; }
+table.grid th { background: #f0f2f5; }
+table.grid td .code { font-size: 18px; font-weight: bold; }
+table.grid td .raw { display: block; font-size: 11px; color: var(--sub); max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+table.grid td.chg { background: var(--new); }
+table.grid td.ab { background: var(--warn); }
+table.grid td.unknown { background: var(--bad); }
+table.grid td select { font-size: 12px; padding: 2px; }
+.legend span { display: inline-block; padding: 1px 8px; margin-right: 6px; border: 1px solid var(--line); font-size: 12px; }
+.final { position: sticky; bottom: 0; background: #fff; border-top: 2px solid var(--accent); padding: 10px 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #222; color: #fff; padding: 10px 16px; border-radius: 8px; max-width: 90vw; font-size: 14px; z-index: 10; }
+.copyhow { padding-left: 1.4em; line-height: 1.7; }
+table.copyruns td { vertical-align: middle; }
+.quick { margin-top: 10px; padding: 12px 14px; border: 2px solid var(--accent); border-radius: 10px; background: #fff; }
+.quick .help { margin: 6px 0 0; }
+button.big { font-size: 1.1em; padding: 10px 22px; }
+
+/* 上の帯：トップページ（top.html）と同じ見た目。生成りの紙色・明朝のロゴ・藍の線 */
+.topbar { background: var(--bg); color: var(--ink); padding: 0 24px; border-bottom: 1px solid var(--line); }
+.topbar > * { max-width: 1100px; margin-left: auto; margin-right: auto; }
+.brandrow { display: flex; align-items: center; gap: 12px; height: 64px; }
+.mark { width: 30px; height: 30px; flex: none; }
+.brand { font-family: var(--mincho); font-weight: 600; font-size: 19px; letter-spacing: .12em; }
+.pages a.home { display: inline-flex; align-items: center; gap: 6px; }
+.pages .ico { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.5; }
+.pages { display: flex; gap: 6px 22px; flex-wrap: wrap; }
+.pages a { white-space: nowrap; color: var(--sub); text-decoration: none; padding: 8px 2px 10px; font-size: 15px; font-weight: 700; letter-spacing: .04em; border-bottom: 3px solid transparent; }
+.pages a.on { color: var(--accent); border-bottom-color: var(--accent); }
+.pages a:not(.on):hover { color: var(--ink); border-bottom-color: var(--line); }
+.topbar .lead { margin: 0 auto; padding: 12px 0 14px; font-size: 13px; color: var(--sub); border-top: 1px solid var(--line); }
+.step h2 { font-family: var(--mincho); letter-spacing: .04em; }
+@media (max-width: 600px) { .topbar { padding: 0 16px; } .brand { font-size: 16px; letter-spacing: .06em; } .pages { gap: 4px 16px; } .pages a { font-size: 14px; } }

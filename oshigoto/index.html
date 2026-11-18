@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<!-- 通信の制限：このページの素材以外には接続できないようにする -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>学年のお仕事AIアプリ</title>
+<style>
+  /* デザインの考え方（グラフィックデザイン・編集デザインの考え方を取り入れる）
+     ・紙のような生成り色の地に、墨色の文字。見出しは明朝、本文はゴシック（明朝＝上品・編集的、ゴシック＝読みやすい）
+     ・大きさの差で「よく使う順」を見せる（ベントー型の格子）：毎週の週案が一番大きく、毎月の学年だより、年に数回の時数表は小さく
+     ・余白は「間」としてたっぷりとる。飾りは幾何学の形を少しだけ（カレンダーの点・紙の線・升目）
+     ・色は藍・朱・松葉の3色を、面積をしぼって使う
+     ・見た目の順番と、キーボードで選ぶ順番をそろえる */
+  :root {
+    --paper: #f5f1e8; --paper2: #ebe5d8; --ink: #1d2430; --sub: #5d6472; --line: #ddd5c4;
+    --ai: #1f3a5f; --ai2: #2c5282; --shu: #c4502f; --shubg: #fbeee7; --matsu: #3f6b52; --matsubg: #e9efe8;
+    --mincho: "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "Noto Serif JP", serif;
+    --gothic: "Yu Gothic UI", "Hiragino Sans", "Meiryo", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--paper); }
+  body { margin: 0; color: var(--ink); font-family: var(--gothic); line-height: 1.75; -webkit-font-smoothing: antialiased;
+         background:
+           radial-gradient(circle at 92% -10%, rgba(196,80,47,.07) 0 260px, transparent 261px),
+           var(--paper); min-height: 100vh; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+  a { color: inherit; }
+
+  /* 上の帯 */
+  header .wrap { display: flex; align-items: center; height: 72px; gap: 12px; }
+  .mark { width: 30px; height: 30px; flex: none; }
+  .brand { font-family: var(--mincho); font-weight: 600; font-size: 19px; letter-spacing: .12em; }
+
+  /* 見出し */
+  .hero { padding: 56px 0 44px; display: grid; grid-template-columns: auto 1fr; gap: 28px; align-items: end; }
+  .hero .eyebrow { grid-column: 1 / -1; font-size: 12px; letter-spacing: .32em; color: var(--sub); font-weight: 700; }
+  .hero h1 { margin: 0; font-family: var(--mincho); font-weight: 600; font-size: clamp(30px, 4.6vw, 52px); line-height: 1.35; letter-spacing: .06em; }
+  .hero h1 em { font-style: normal; color: var(--shu); }
+  .hero p { margin: 0 0 10px; color: var(--sub); font-size: 14px; border-left: 2px solid var(--line); padding-left: 18px; max-width: 22em; }
+
+  /* 格子 */
+  .bento { display: grid; grid-template-columns: repeat(12, 1fr); grid-auto-rows: minmax(150px, auto); gap: 22px; }
+  .tile { position: relative; overflow: hidden; border-radius: 20px; text-decoration: none; display: flex; flex-direction: column; padding: 30px 32px;
+          transition: transform .22s cubic-bezier(.2,.7,.2,1), box-shadow .22s; }
+  .tile:hover { transform: translateY(-3px); box-shadow: 0 18px 40px -18px rgba(29,36,48,.35); }
+  .tile:focus-visible { outline: 3px solid var(--shu); outline-offset: 4px; }
+  .freq { display: flex; align-items: baseline; gap: 10px; font-size: 11px; letter-spacing: .28em; font-weight: 700; }
+  .freq b { font-size: 13px; letter-spacing: .1em; }
+  .tile h2 { margin: 14px 0 8px; font-family: var(--mincho); font-weight: 600; letter-spacing: .06em; line-height: 1.4; }
+  .tile p { margin: 0; font-size: 14px; max-width: 26em; }
+  .go { margin-top: auto; padding-top: 22px; display: inline-flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 700; letter-spacing: .08em; }
+  .go i { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; border: 1.5px solid currentColor; transition: transform .22s; }
+  .tile:hover .go i { transform: translateX(4px); }
+  .art { position: absolute; pointer-events: none; }
+
+  /* 毎週：週案（いちばん大きい・藍） */
+  .t-week { grid-column: span 7; grid-row: span 2; background: var(--ai); color: #f3efe6; }
+  .t-week .freq { color: #b9c7dc; }
+  .t-week h2 { font-size: clamp(28px, 3.4vw, 40px); }
+  .t-week p { color: #d3dcea; font-size: 15px; }
+  .t-week .art { right: -30px; bottom: -30px; width: 330px; opacity: .9; }
+  .t-week .sub { position: relative; z-index: 1; margin-top: 18px; font-size: 13px; color: #b9c7dc; }
+  .t-week .sub span { border-bottom: 1px solid rgba(185,199,220,.5); }
+
+  /* 毎月：学年だより（朱） */
+  .t-month { grid-column: span 5; grid-row: span 1; background: var(--shubg); color: var(--ink); border: 1px solid #f0d6c9; }
+  .t-month .freq, .t-month .go { color: var(--shu); }
+  .t-month h2 { font-size: 26px; }
+  .t-month p { color: var(--sub); }
+  .t-month .art { right: 22px; top: 22px; width: 92px; }
+
+  /* 年に数回：時数表（松葉・控えめ） */
+  .t-year { grid-column: span 5; grid-row: span 1; background: #fbf9f4; color: var(--ink); border: 1px solid var(--line); }
+  .t-year .freq, .t-year .go { color: var(--matsu); }
+  .t-year h2 { font-size: 21px; }
+  .t-year p { color: var(--sub); }
+  .t-year .art { right: 24px; top: 24px; width: 76px; }
+
+  .t-month .freq, .t-month h2, .t-month p { padding-right: 110px; }
+  .t-year .freq, .t-year h2, .t-year p { padding-right: 96px; }
+  @media (max-width: 420px) { .freq .en { display: none; } .t-month .art, .t-year .art { width: 56px; } .t-month .freq, .t-month h2, .t-month p, .t-year .freq, .t-year h2, .t-year p { padding-right: 64px; } }
+
+  footer { margin-top: 64px; border-top: 1px solid var(--line); }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; padding-top: 22px; padding-bottom: 40px; font-size: 12px; color: var(--sub); letter-spacing: .04em; }
+  footer a { color: var(--ai2); }
+
+  @media (max-width: 880px) {
+    .hero { grid-template-columns: 1fr; gap: 16px; padding: 36px 0 32px; }
+    .bento { grid-template-columns: 1fr; gap: 16px; }
+    .t-week, .t-month, .t-year { grid-column: auto; grid-row: auto; }
+    .t-week { min-height: 340px; }
+    .tile { padding: 26px 24px; }
+    .t-week .art { width: 240px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .tile, .go i { transition: none; } .tile:hover { transform: none; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect x="1" y="1" width="30" height="30" rx="8" fill="#1f3a5f"/><circle cx="22" cy="10" r="4" fill="#c4502f"/><path d="M8 22h16M8 17h10" stroke="#f5f1e8" stroke-width="2.4" stroke-linecap="round"/></svg>
+    <span class="brand">学年のお仕事AIアプリ</span>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="hero">
+    <div class="eyebrow">GAKUNEN WORKS</div>
+    <h1>今日は、<br>どの<em>お仕事</em>を<br>しますか。</h1>
+    <p>学年の先生の、毎週・毎月のお仕事を手伝います。<br>使いたいものを選んでください。</p>
+  </section>
+
+  <div class="bento">
+    <!-- 毎週：週案スプレッドシート改良ガイド -->
+    <a class="tile t-week" href="menu.html">
+      <div class="freq"><span class="en">SET UP ONCE</span> <b>はじめに1回</b></div>
+      <h2>週案スプレッドシート改良ガイド</h2>
+      <p>週案（Googleスプレッドシート）に「週案」メニューを入れます。<br>あとは週案の中で、週ごとのタブをまとめて作れます。</p>
+      <span class="go"><i><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></i>開く</span>
+      <!-- 飾り：カレンダーの点の格子 -->
+      <svg class="art" viewBox="0 0 300 300" aria-hidden="true">
+        <g fill="none" stroke="rgba(243,239,230,.18)" stroke-width="1.5"><circle cx="150" cy="150" r="148"/><circle cx="150" cy="150" r="108"/></g>
+        <g fill="rgba(243,239,230,.28)">
+          <circle cx="90" cy="110" r="7"/><circle cx="120" cy="110" r="7"/><circle cx="150" cy="110" r="7"/><circle cx="180" cy="110" r="7"/><circle cx="210" cy="110" r="7"/>
+          <circle cx="90" cy="140" r="7"/><circle cx="120" cy="140" r="7"/><circle cx="180" cy="140" r="7"/><circle cx="210" cy="140" r="7"/>
+          <circle cx="90" cy="170" r="7"/><circle cx="120" cy="170" r="7"/><circle cx="150" cy="170" r="7"/><circle cx="180" cy="170" r="7"/><circle cx="210" cy="170" r="7"/>
+          <circle cx="90" cy="200" r="7"/><circle cx="120" cy="200" r="7"/><circle cx="150" cy="200" r="7"/>
+        </g>
+        <circle cx="150" cy="140" r="11" fill="#c4502f"/>
+      </svg>
+    </a>
+
+    <!-- 毎月：学年だより作成 -->
+    <a class="tile t-month" href="../">
+      <div class="freq"><span class="en">MONTHLY</span> <b>毎月</b></div>
+      <h2>学年だより作成</h2>
+      <p>行事予定・カリキュラム・写真から、A4・2ページの学年だより（Word）を作ります。</p>
+      <span class="go"><i><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></i>開く</span>
+      <!-- 飾り：重なった紙 -->
+      <svg class="art" viewBox="0 0 92 92" aria-hidden="true">
+        <rect x="22" y="6" width="56" height="72" rx="6" fill="#f3d3c3"/>
+        <rect x="12" y="14" width="56" height="72" rx="6" fill="#fff" stroke="#e7b9a3"/>
+        <path d="M22 30h30M22 40h36M22 50h24M22 60h32" stroke="#c4502f" stroke-width="3" stroke-linecap="round" opacity=".55"/>
+      </svg>
+    </a>
+
+    <!-- 年に数回：授業時数算出シート自動入力 -->
+    <a class="tile t-year" href="jisu.html">
+      <div class="freq"><span class="en">A FEW TIMES A YEAR</span> <b>年に2〜3回</b></div>
+      <h2>授業時数算出シート自動入力</h2>
+      <p>週案の教科をコピーして、<br>授業時数算出シート（Excel）に1回貼るだけ。</p>
+      <span class="go"><i><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></i>開く</span>
+      <!-- 飾り：升目 -->
+      <svg class="art" viewBox="0 0 76 76" aria-hidden="true">
+        <g fill="none" stroke="#9fb8a8" stroke-width="1.5"><rect x="2" y="2" width="72" height="72" rx="6"/><path d="M26 2v72M50 2v72M2 26h72M2 50h72"/></g>
+        <rect x="27.5" y="27.5" width="21" height="21" fill="#3f6b52" opacity=".75"/>
+      </svg>
+    </a>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>週案や、選んだファイル・写真は、このパソコンの中だけで処理します。</span>
+  </div>
+</footer>
+</body>
+</html>
