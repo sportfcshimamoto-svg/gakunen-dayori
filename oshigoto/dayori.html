@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<base href="../">
+<!-- 通信の制限：このページの素材と、Googleスプレッドシートの読み込み以外には接続できないようにする -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; font-src 'self'; connect-src 'self' https://docs.google.com https://*.googleusercontent.com; base-uri 'self'; form-action 'none'; object-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>学年だより作成</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="ws-bar">
+<div class="brandrow">
+    <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect x="1" y="1" width="30" height="30" rx="8" fill="#1f3a5f"/><circle cx="22" cy="10" r="4" fill="#c4502f"/><path d="M8 22h16M8 17h10" stroke="#f5f1e8" stroke-width="2.4" stroke-linecap="round"/></svg>
+    <span class="brand">学年のお仕事AIアプリ</span>
+  </div>
+  <nav class="ws-pages"><a class="home" href="oshigoto/"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="1.5" width="6" height="7.5" rx="1.6"/><rect x="9.5" y="1.5" width="5" height="4" rx="1.4"/><rect x="9.5" y="7.5" width="5" height="7" rx="1.4"/><rect x="1.5" y="11" width="6" height="3.5" rx="1.4"/></svg>トップ</a><a href="oshigoto/menu.html">週案スプレッドシート改良ガイド</a><a class="on" href="oshigoto/dayori.html">学年だより作成</a><a href="oshigoto/jisu.html">授業時数算出シート自動入力</a></nav>
+</header>
+<style>
+  /* お仕事アプリの帯（oshigoto/jisu.css と同じ見た目。学年だよりの style.css とぶつからないよう名前を分ける） */
+  .ws-bar { flex: none; background: #f5f1e8; color: #1d2430; padding: 0 24px; border-bottom: 1px solid #ddd5c4; font-family: "Yu Gothic UI", "Hiragino Sans", "Meiryo", system-ui, sans-serif; }
+  .ws-bar .brandrow { display: flex; align-items: center; gap: 12px; height: 56px; }
+  .ws-bar .mark { width: 28px; height: 28px; flex: none; }
+  .ws-bar .brand { font-family: "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "Noto Serif JP", serif; font-weight: 600; font-size: 18px; letter-spacing: .12em; }
+  .ws-pages { display: flex; gap: 6px 22px; flex-wrap: wrap; }
+  .ws-pages a { white-space: nowrap; color: #5d6472; text-decoration: none; padding: 6px 2px 9px; font-size: 15px; font-weight: 700; letter-spacing: .04em; border-bottom: 3px solid transparent; display: inline-flex; align-items: center; gap: 6px; }
+  .ws-pages a.on { color: #1f3a5f; border-bottom-color: #1f3a5f; }
+  .ws-pages a:not(.on):hover { color: #1d2430; border-bottom-color: #ddd5c4; }
+  .ws-pages .ico { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.5; }
+  @media (max-width: 600px) { .ws-bar { padding: 0 16px; } .ws-bar .brand { font-size: 16px; letter-spacing: .06em; } .ws-pages { gap: 4px 16px; } .ws-pages a { font-size: 14px; } }
+</style>
+<header class="topbar">
+  <h1>学年だより作成</h1>
+  <div class="topbtns">
+    <button id="btn-word" class="primary">Wordファイルを作る</button>
+    <button id="btn-export">保存ファイルに書き出す</button>
+    <label class="btn">保存ファイルを読み込む<input id="file-import" type="file" accept=".json,application/json" hidden></label>
+    <button id="btn-reset" class="danger">新しく作り直す</button>
+  </div>
+</header>
+<main class="layout">
+  <section class="editor">
+    <nav class="tabs" id="tabs"></nav>
+    <div id="panel" class="panel"></div>
+  </section>
+  <section class="viewer">
+    <div id="fit" class="fit"></div>
+    <div class="zoombar">
+      <span>プレビュー（Wordの仕上がりとは少しちがうことがあります）</span>
+      <label>大きさ <input id="zoom" type="range" min="0.4" max="1.2" step="0.05" value="0.7"></label>
+    </div>
+    <div id="preview" class="preview"></div>
+  </section>
+</main>
+<dialog id="precheck" class="precheck">
+  <h2>Wordファイルを作る前の確認</h2>
+  <p class="help">次のところを確かめてください。どれもお知らせです。直さなくても「このまま作る」でWordファイルを作れます。</p>
+  <ol id="precheck-list"></ol>
+  <div class="precheck-btns">
+    <button id="precheck-back">戻って直す</button>
+    <button id="precheck-go" class="primary">このまま作る</button>
+  </div>
+</dialog>
+<div id="toast" class="toast" hidden></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
