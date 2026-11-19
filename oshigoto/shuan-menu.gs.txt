@@ -17,7 +17,7 @@ var SHORT = { 国: '国語', 社: '社会', 算: '算数', 理: '理科', 生: '
 
 // ---------- メニュー・画面 ----------
 function onOpen() {
-  SpreadsheetApp.getUi().createMenu('週案').addItem('週のタブを作る', 'showSidebar').addToUi();
+  SpreadsheetApp.getUi().createMenu('週案').addItem('週のタブを作る', 'showSidebar').addItem('今ある週のタブの日付を直す', 'fixDates').addToUi();
 }
 
 function showSidebar() {
@@ -112,8 +112,9 @@ function weekInfo_(vals) {
   var mondayDay = 0;
   names.forEach(function (n) {
     var cl = shape.classes[n];
-    for (var r = 1; r < cl.headRow && !mondayDay; r++) {
-      var m = /^(\d{1,2})日?$/.exec(norm_(at_(vals, cl.dayCols['月'], r)));
+    var dr = dateRowOf_(vals, cl);
+    if (dr && !mondayDay) {
+      var m = /(\d{1,2})日?$/.exec(norm_(at_(vals, cl.dayCols['月'], dr.row)));
       if (m) mondayDay = Number(m[1]);
     }
   });
@@ -129,6 +130,10 @@ function shapeOf_(vals) {
     if (/^\d+組$/.test(v)) {
       var dayCols = {};
       for (var k = 1; k <= 7; k++) { var dv = norm_(at_(vals, c + k, r)); if (DAYS.indexOf(dv) >= 0) dayCols[dv] = c + k; }
+      // 見出しの1マスにメモなどが書かれていても、となりから月〜金が順に並んでいれば、その並びで読む
+      if (Object.keys(dayCols).length < 5 && DAYS.filter(function (d, i) { return norm_(at_(vals, c + 1 + i, r)) === d; }).length >= 4) {
+        DAYS.forEach(function (d, i) { dayCols[d] = c + 1 + i; });
+      }
       if (Object.keys(dayCols).length === 5) classes[v] = { labelCol: c, headRow: r, dayCols: dayCols, rows: {} };
     }
     if (!abCell && /^[AB]週$/.test(v)) { abCell = { r: r, c: c }; ab = v.charAt(0); }
@@ -147,13 +152,24 @@ function shapeOf_(vals) {
   return { classes: classes, abCell: abCell, ab: ab };
 }
 
+/** 日付の行：曜日の見出しの上の行の「14日」、または見出しの下の行の「12/14」「12月14日」（どちらもなければ、上に行があれば上） */
+function dateRowOf_(vals, cl) {
+  var col = cl.dayCols['月'];
+  var above = cl.headRow > 1 ? norm_(at_(vals, col, cl.headRow - 1)) : null;
+  var below = norm_(at_(vals, col, cl.headRow + 1));
+  if (above && /^\d{1,2}日?$/.test(above)) return { row: cl.headRow - 1, full: false };
+  if (/^(\d{4}[\/\-年])?\d{1,2}[\/\-月]\d{1,2}日?(\(.\))?$/.test(below) || /^\d{1,2}日$/.test(below)) return { row: cl.headRow + 1, full: true };
+  if (cl.headRow > 1) return { row: cl.headRow - 1, full: false };
+  return null;
+}
+
 /** タブの名前（「1214」「12/14」「12月14日」）と月曜の日から、月曜日の日付の候補（祝日の週は火曜の名前のこともある） */
 function mondayCandidates_(name, mondayDay, schoolYear) {
   var digits = norm_(name);
   var sl = /^(\d{1,2})(?:\/|月)(\d{1,2})日?$/.exec(digits);
   if (sl) digits = sl[1] + ('0' + sl[2]).slice(-2);
-  if (!/^\d{2,4}$/.test(digits) || !mondayDay) return [];
-  var out = [];
+  if (!/^\d{2,4}$/.test(digits)) return [];
+  var out = [], byName = [];
   var ks = sl ? [sl[1].length] : [1, 2];
   ks.forEach(function (k) {
     var m = Number(digits.slice(0, k)), d = Number(digits.slice(k));
@@ -163,10 +179,13 @@ function mondayCandidates_(name, mondayDay, schoolYear) {
     if (named.getUTCMonth() !== m - 1) return;
     for (var back = 0; back <= 4; back++) {
       var mon = new Date(named.getTime() - back * 86400000);
-      if (mon.getUTCDay() === 1 && mon.getUTCDate() === mondayDay && out.indexOf(iso_(mon)) < 0) out.push(iso_(mon));
+      if (mon.getUTCDay() !== 1) continue;
+      if (byName.indexOf(iso_(mon)) < 0) byName.push(iso_(mon));
+      if (mon.getUTCDate() === mondayDay && out.indexOf(iso_(mon)) < 0) out.push(iso_(mon));
     }
   });
-  return out;
+  // 週案の中の日付が名前と合えばそれ。日付がない・ひな形のまま直っていないときは、タブの名前を信じる
+  return out.length ? out : byName;
 }
 
 /** 「105」のように決めきれないタブは、前後のタブの日付から決める */
@@ -189,6 +208,10 @@ function pickTemplate_(ss, existing, ab) {
   for (var i = existing.length - 1; i >= 0; i--) {
     if (existing[i].ab === ab) { var s = ss.getSheetByName(existing[i].name); if (s) return s; }
   }
+  // A週/B週のマスがない週案は、いちばん新しい週のタブ
+  for (var j = existing.length - 1; j >= 0; j--) {
+    if (!existing[j].ab) { var s2 = ss.getSheetByName(existing[j].name); if (s2) return s2; }
+  }
   var ok = ss.getSheets().filter(function (s) { return Object.keys(shapeOf_(displayValues_(s)).classes).length; });
   var n = function (s) { return norm_(s.getName()).replace(/\s/g, ''); };
   return ok.filter(function (s) { return n(s) === ab + '週'; })[0] || ok.filter(function (s) { return n(s).indexOf(ab + '週') >= 0; })[0] || ok[0] || null;
@@ -200,8 +223,8 @@ function fillWeek_(sh, week, grids) {
   var vals = displayValues_(sh);
   var shape = shapeOf_(vals);
   var notes = [];
-  if (shape.abCell) sh.getRange(shape.abCell.r, shape.abCell.c).setValue(week.ab + '週');
-  else notes.push(week.name + '：A週/B週のマスがありません');
+  if (shape.abCell) sh.getRange(shape.abCell.r, shape.abCell.c).setValue(week.ab + '週');   // A週/B週のマスがない週案なら書かない
+  notes = notes.concat(writeDates_(sh, week, vals, shape));
   Object.keys(shape.classes).forEach(function (cname) {
     var cl = shape.classes[cname];
     var grid = grids[cname];
@@ -213,7 +236,6 @@ function fillWeek_(sh, week, grids) {
         var blank = []; for (var k = 0; k < n; k++) blank.push(['']);
         sh.getRange(cl.firstRow, col, n, 1).setValues(blank);   // 前の週のメモを消す（書式は残る）
       }
-      if (cl.headRow > 1) sh.getRange(cl.headRow - 1, col).setValue(dateOf_(addDays_(week.monday, i)).getUTCDate() + '日');
       if (!grid) return;
       SLOTS.forEach(function (slot) {
         var r = cl.rows[slot];
@@ -222,6 +244,44 @@ function fillWeek_(sh, week, grids) {
     });
   });
   return notes;
+}
+
+/** 月〜金の日付を書く。上の行の形なら「14日」、下の行の形なら日付（表示の形はタブのまま） */
+function writeDates_(sh, week, vals, shape) {
+  var notes = [];
+  Object.keys(shape.classes).forEach(function (cname) {
+    var cl = shape.classes[cname];
+    var dr = dateRowOf_(vals, cl);
+    if (!dr) { notes.push(week.name + '：' + cname + 'の日付の行が見つかりません'); return; }
+    var fmt = dr.full ? sh.getRange(dr.row, cl.dayCols['月']).getNumberFormat() : '';
+    if (!fmt || fmt === 'General' || fmt === '0') fmt = 'm"月"d"日"';
+    DAYS.forEach(function (day, i) {
+      var d = dateOf_(addDays_(week.monday, i));
+      var cell = sh.getRange(dr.row, cl.dayCols[day]);
+      if (dr.full) cell.setValue(new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())).setNumberFormat(fmt);
+      else cell.setValue(d.getUTCDate() + '日');
+    });
+  });
+  return notes;
+}
+
+/** メニュー「今ある週のタブの日付を直す」：タブの名前から月〜金の日付を書き直す（教科やメモはさわらない） */
+function fixDates() {
+  var ui = SpreadsheetApp.getUi();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var weeks = existingWeeks_();
+  if (!weeks.length) { ui.alert('日付の名前（例：4月6日）の週のタブが見つかりませんでした'); return; }
+  var ans = ui.alert('日付を直す', weeks.length + 'このタブ（' + weeks[0].name + '〜' + weeks[weeks.length - 1].name +
+    '）の月〜金の日付を、タブの名前に合わせて書き直します。教科やメモはそのままです。よろしいですか？', ui.ButtonSet.OK_CANCEL);
+  if (ans !== ui.Button.OK) return;
+  var notes = [];
+  weeks.forEach(function (w) {
+    var sh = ss.getSheetByName(w.name);
+    var vals = displayValues_(sh, 6);
+    notes = notes.concat(writeDates_(sh, w, vals, shapeOf_(vals)));
+  });
+  SpreadsheetApp.flush();
+  ui.alert('直しました（' + weeks.length + 'タブ）' + (notes.length ? '\n' + notes.join('\n') : ''));
 }
 
 // ---------- 時間割を読む ----------
