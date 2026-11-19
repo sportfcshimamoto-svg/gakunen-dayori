@@ -47,7 +47,7 @@ function checkTimetable(cls, text) {
 
 /** 作る週の一覧（画面に出す） */
 function previewWeeks(from, to, abOverride) {
-  return planWeeks_(from, to, existingWeeks_(), abOverride || {});
+  return planWeeks_(from, to, existingWeeks_(schoolYearOf_(from)), abOverride || {});
 }
 
 /** 週のタブを作る */
@@ -62,7 +62,7 @@ function makeWeeks(from, to, abOverride) {
     if (p.ok) grids[c] = p.grid;
   });
   if (!Object.keys(grids).length) throw new Error('時間割がまだ読み込まれていません');
-  var existing = existingWeeks_();
+  var existing = existingWeeks_(schoolYearOf_(from));
   var list = planWeeks_(from, to, existing, abOverride || {}).filter(function (w) { return !w.exists; });
   if (!list.length) throw new Error('作る週がありません。期間を確かめてください');
   var made = [], notes = [];
@@ -73,7 +73,7 @@ function makeWeeks(from, to, abOverride) {
     var sh = tpl.copyTo(ss).setName(w.name);
     ss.setActiveSheet(sh);
     ss.moveActiveSheet(ss.getNumSheets());
-    notes = notes.concat(fillWeek_(sh, w, grids));
+    notes = notes.concat(fillWeek_(sh, w, grids, colorSource_(ss, w.ab)));
     existing.push({ name: w.name, monday: w.monday, ab: w.ab });   // 次の週のひな形は、いま作ったタブ
     made.push(w.name);
   });
@@ -90,13 +90,14 @@ function displayValues_(sh, maxRows) {
 }
 
 /** 週案にある週のタブ：[{ name, monday, ab, sheet }]（月曜の順） */
-function existingWeeks_() {
+/** sy：タブの名前（例「4月6日」）を何年度として読むか。期間を選んだら、その最初の日の年度（3月に次の年度のタブを作るときのため） */
+function existingWeeks_(sy) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sy = schoolYear_();
+  sy = sy || schoolYear_();
   var found = [];
   ss.getSheets().forEach(function (sh) {
     var name = sh.getName();
-    if (!/^\s*\d{1,2}(?:[\/／月]\d{1,2}日?|\d{1,3})\s*$/.test(norm_(name))) return;   // 日付のタブだけ見る（ひな形は見ない）
+    if (!isWeekName_(name)) return;   // 日付のタブだけ見る（ひな形は見ない）
     var info = weekInfo_(displayValues_(sh, 4));   // 見出し（上の4行）だけ読めばよい
     if (!info) return;
     found.push({ name: name, cands: mondayCandidates_(name, info.mondayDay, sy), ab: info.ab });
@@ -217,33 +218,98 @@ function pickTemplate_(ss, existing, ab) {
   return ok.filter(function (s) { return n(s) === ab + '週'; })[0] || ok.filter(function (s) { return n(s).indexOf(ab + '週') >= 0; })[0] || ok[0] || null;
 }
 
+function isWeekName_(name) { return /^\s*\d{1,2}(?:[\/／月]\d{1,2}日?|\d{1,3})\s*$/.test(norm_(name)); }
+
+/** 色のもと：日付でないひな形のタブ（「A週」→「A週（後期）」など→「原本」の順）。前の週のグレー（休みの日）をうつさないため */
+function colorSource_(ss, ab) {
+  var ok = ss.getSheets().filter(function (s) { return !isWeekName_(s.getName()) && Object.keys(shapeOf_(displayValues_(s, 30)).classes).length; });
+  var n = function (s) { return norm_(s.getName()).replace(/\s/g, ''); };
+  return ok.filter(function (s) { return n(s) === ab + '週'; })[0] ||
+    ok.filter(function (s) { return n(s).indexOf(ab + '週') >= 0; })[0] ||
+    ok.filter(function (s) { return n(s).indexOf('原本') >= 0; })[0] || null;
+}
+
 // ---------- 1週分を書きこむ ----------
-/** 月〜金のマス（朝学〜宿題）を空にして、日付・A週/B週・教科を入れる。色・罫線・結合・集計はコピーのまま */
-function fillWeek_(sh, week, grids) {
+/** 月〜金のマス（朝学〜宿題）を空にして、日付・A週/B週・教科を入れる。罫線・結合・集計はコピーのまま。
+ *  色はひな形のタブから。祝日（振替休日・国民の休日も）はグレーにして、教科は入れない */
+function fillWeek_(sh, week, grids, colorSrc) {
   var vals = displayValues_(sh);
   var shape = shapeOf_(vals);
   var notes = [];
   if (shape.abCell) sh.getRange(shape.abCell.r, shape.abCell.c).setValue(week.ab + '週');   // A週/B週のマスがない週案なら書かない
   notes = notes.concat(writeDates_(sh, week, vals, shape));
+  var srcShape = colorSrc ? shapeOf_(displayValues_(colorSrc)) : null;
+  var holidays = {};
   Object.keys(shape.classes).forEach(function (cname) {
     var cl = shape.classes[cname];
     var grid = grids[cname];
     if (!grid) notes.push(week.name + '：' + cname + 'の時間割がないので、教科は空です');
+    var scl = srcShape && srcShape.classes[cname];
+    var sameShape = scl && scl.firstRow === cl.firstRow && scl.lastRow === cl.lastRow && scl.rows['6'] === cl.rows['6'];
     DAYS.forEach(function (day, i) {
       var col = cl.dayCols[day];
+      var date = addDays_(week.monday, i);
+      var hol = holidayName_(date);
+      if (hol) holidays[date] = hol;
       if (cl.firstRow && cl.lastRow >= cl.firstRow) {
         var n = cl.lastRow - cl.firstRow + 1;
         var blank = []; for (var k = 0; k < n; k++) blank.push(['']);
         sh.getRange(cl.firstRow, col, n, 1).setValues(blank);   // 前の週のメモを消す（書式は残る）
+        if (sameShape && scl.dayCols[day]) {   // 色はひな形から（前の週の休みのグレーなどをうつさない）
+          sh.getRange(cl.firstRow, col, n, 1).setBackgrounds(colorSrc.getRange(cl.firstRow, scl.dayCols[day], n, 1).getBackgrounds());
+        }
+        if (hol) {   // 祝日：朝学〜6校時の下までグレー
+          var end = cl.rows['6'] ? cl.rows['6'] + 2 : cl.lastRow;
+          sh.getRange(cl.firstRow, col, end - cl.firstRow + 1, 1).setBackground(HOLIDAY_GRAY);
+        }
       }
-      if (!grid) return;
+      if (!grid || hol) return;
       SLOTS.forEach(function (slot) {
         var r = cl.rows[slot];
         if (r) sh.getRange(r, col).setValue(toShuanWord_(grid[day][slot], week.ab));
       });
     });
   });
+  Object.keys(holidays).forEach(function (d) {
+    var dd = dateOf_(d);
+    notes.push(week.name + '：' + (dd.getUTCMonth() + 1) + '月' + dd.getUTCDate() + '日は' + holidays[d] + 'なのでグレーにしました');
+  });
   return notes;
+}
+
+// ---------- 祝日（カレンダーどおり。外のサービスは使わず、法律の決まりで計算する） ----------
+var HOLIDAY_GRAY = '#cccccc';
+
+/** 'YYYY-MM-DD' が祝日なら名前、ちがえば '' */
+function holidayName_(iso) {
+  var y = Number(iso.slice(0, 4));
+  return holidaysOf_(y)[iso] || '';
+}
+
+function holidaysOf_(y) {
+  var h = {};
+  var put = function (m, d, name) { h[y + '-' + pad_(m) + '-' + pad_(d)] = name; };
+  var nthMonday = function (m, n) { var first = new Date(Date.UTC(y, m - 1, 1)).getUTCDay(); return 1 + ((8 - first) % 7) + (n - 1) * 7; };
+  var shunbun = Math.floor(20.8431 + 0.242194 * (y - 1980) - Math.floor((y - 1980) / 4));
+  var shubun = Math.floor(23.2488 + 0.242194 * (y - 1980) - Math.floor((y - 1980) / 4));
+  put(1, 1, '元日'); put(1, nthMonday(1, 2), '成人の日'); put(2, 11, '建国記念の日'); put(2, 23, '天皇誕生日');
+  put(3, shunbun, '春分の日'); put(4, 29, '昭和の日'); put(5, 3, '憲法記念日'); put(5, 4, 'みどりの日'); put(5, 5, 'こどもの日');
+  put(7, nthMonday(7, 3), '海の日'); put(8, 11, '山の日'); put(9, nthMonday(9, 3), '敬老の日'); put(9, shubun, '秋分の日');
+  put(10, nthMonday(10, 2), 'スポーツの日'); put(11, 3, '文化の日'); put(11, 23, '勤労感謝の日');
+  var keys = Object.keys(h).sort();
+  // 国民の休日：祝日と祝日にはさまれた日
+  keys.forEach(function (k) {
+    var mid = addDays_(k, 1), next = addDays_(k, 2);
+    if (h[next] && !h[mid] && dateOf_(mid).getUTCDay() !== 0) h[mid] = '国民の休日';
+  });
+  // 振替休日：祝日が日曜なら、そのあとの祝日でない最初の日
+  Object.keys(h).sort().forEach(function (k) {
+    if (dateOf_(k).getUTCDay() !== 0 || h[k] === '振替休日') return;
+    var d = addDays_(k, 1);
+    while (h[d]) d = addDays_(d, 1);
+    h[d] = '振替休日';
+  });
+  return h;
 }
 
 /** 月〜金の日付を書く。月も見えるように「1月4日」の形（下の行で、もう月と日の出る形ならその形のまま） */
@@ -359,6 +425,7 @@ function dateOf_(s) { var p = s.split('-').map(Number); return new Date(Date.UTC
 function addDays_(s, n) { return iso_(new Date(dateOf_(s).getTime() + n * 86400000)); }
 function mondayOf_(s) { return addDays_(s, -((dateOf_(s).getUTCDay() + 6) % 7)); }
 function schoolYear_() { var d = new Date(); return d.getMonth() + 1 >= 4 ? d.getFullYear() : d.getFullYear() - 1; }
+function schoolYearOf_(iso) { if (!iso) return 0; var d = dateOf_(iso); return d.getUTCMonth() + 1 >= 4 ? d.getUTCFullYear() : d.getUTCFullYear() - 1; }
 
 // ---------- 画面（横に出るパネル） ----------
 var SIDEBAR_HTML = '<!doctype html><html><head><base target="_top"><meta charset="utf-8"><style>' +
