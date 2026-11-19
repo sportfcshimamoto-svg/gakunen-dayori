@@ -1,0 +1,758 @@
+/**
+ * 連絡帳（Googleスプレッドシート）に「連絡帳」メニューを足し、週案から自動で書くプログラム。
+ * 使い方：連絡帳で「拡張機能 → Apps Script」を開き、このファイルの中身をすべて貼って保存する。
+ * はじめに1回、メニュー「連絡帳 → はじめに：週案をつなぐ」で週案のリンクを貼り、
+ * ふだんの時間数・下校時刻・持ち物を設定する（学年ごとにちがうため。あとからメニューの「設定」で直せる）。
+ *
+ * 自動で書くもの（「5-1」の列は週案の1組、「5-2」は2組、「5-3」は3組から。学年の数字は見ない）
+ *   時：次の日の時間割。ふだんの時間割（週案のひな形「A週」「B週（後期）」など）とちがうところだけ
+ *       （例「水曜　③体育　それ以外通り（13：15下校）」）。早く帰る日だけ下校時刻
+ *   し：週案の「宿題」の行
+ *   持：月曜セット（次の日が次の週）・体そう服（次の日に体育）。先生が書き足したものは残す
+ * 「連」「音」など、ほかの行はさわらない。
+ * いちばん新しく直したほうが残る：週案が変わったマスだけ書き直す。連絡帳で手直ししたマスは、週案のその日が変わるまで残す。
+ * 週案を直すとすぐ（週案の「編集」のしかけ）、ほかに10分ごとにも見る（週案のメニューでタブを作ったときなど）。
+ * 週案と連絡帳のほかに、データを送ることはない。
+ */
+
+// ---------- 決まり ----------
+var DAYS = ['月', '火', '水', '木', '金'];
+var PERIODS = ['1', '2', '3', '4', '5', '6'];
+// 学年ごとの決まりは、メニュー「連絡帳 → 設定」で決める（この連絡帳に覚える）。はじめはこの形（5年生）
+var DEFAULT_SETTINGS = {
+  normal: { 月: 6, 火: 6, 水: 5, 木: 6, 金: 6 },        // ふだんの時間数。これより少ない日だけ下校時刻を書く
+  geko: { 3: '11：35', 4: '13：15', 5: '14：20' },     // ○時間目までの日の下校時刻
+  mondaySet: '月曜セット',                              // 次の日が次の週のとき
+  items: [{ subject: '体育', item: '体そう服' }],       // 次の日にこの教科があるとき（月曜セットの日は書かない）
+};
+var AHEAD_WEEKS = 6;                                             // 10分ごとに週案と見比べるのは、今週から何週先まで（タブは週案にある週をすべて作る）
+var MARU = ['', '①', '②', '③', '④', '⑤', '⑥'];
+
+// ---------- メニュー ----------
+function onOpen() {
+  SpreadsheetApp.getUi().createMenu('連絡帳')
+    .addItem('週案から自動入力', 'menuFill')
+    .addItem('週を選んでタブを作る', 'showSidebar')
+    .addSeparator()
+    .addItem('はじめに：週案をつなぐ', 'menuConnect')
+    .addItem('設定（時間数・下校時刻・持ち物）', 'showSettings')
+    .addToUi();
+}
+
+/** はじめに1回：週案のリンクを覚えて、自動のしかけを入れる */
+function menuConnect() {
+  var ui = SpreadsheetApp.getUi();
+  var res = ui.prompt('週案をつなぐ', '週案（Googleスプレッドシート）のリンクを貼ってください。', ui.ButtonSet.OK_CANCEL);
+  if (res.getSelectedButton() !== ui.Button.OK) return;
+  var m = /\/d\/([a-zA-Z0-9_-]{20,})/.exec(res.getResponseText()) || /^([a-zA-Z0-9_-]{20,})$/.exec(res.getResponseText().trim());
+  if (!m) { ui.alert('リンクが読めませんでした。週案を開いたときの上のアドレスを、そのまま貼ってください。'); return; }
+  var shuan;
+  try { shuan = SpreadsheetApp.openById(m[1]); } catch (e) { ui.alert('週案を開けませんでした。リンクと、週案を見られるアカウントか確かめてください。'); return; }
+  var weeks = shuanWeeks_(shuan);
+  if (!weeks.length) { ui.alert('週案に週のタブ（「10/19」「12月14日」など）が見つかりませんでした。'); return; }
+  var props = PropertiesService.getDocumentProperties();
+  props.setProperty('shuanId', m[1]);
+  props.setProperty('selfId', SpreadsheetApp.getActiveSpreadsheet().getId());
+  installTriggers_(m[1]);
+  ui.alert('週案をつなぎました（' + shuan.getName() + '）。\n\n次に、学年のふだんの時間数・下校時刻・持ち物を設定してください。\n設定を保存すると、連絡帳に書きはじめます。これから週案を直すと、連絡帳も自動で直ります。');
+  showSettings_(true);
+}
+
+// ---------- 設定（学年ごとの決まり） ----------
+var settingsCache_ = null;
+/** いまの設定（保存していなければ5年生の形） */
+function settings_() {
+  if (settingsCache_) return settingsCache_;
+  var saved = {};
+  try { saved = JSON.parse(PropertiesService.getDocumentProperties().getProperty('settings') || '{}'); } catch (e) { saved = {}; }
+  var S = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+  if (saved.normal) S.normal = saved.normal;
+  if (saved.geko) S.geko = saved.geko;
+  if (saved.mondaySet !== undefined) S.mondaySet = saved.mondaySet;
+  if (saved.items) S.items = saved.items;
+  settingsCache_ = S;
+  return S;
+}
+
+function showSettings() { showSettings_(false); }
+function showSettings_(first) {
+  var html = HtmlService.createHtmlOutput(SETTINGS_HTML.replace('__FIRST__', first ? '1' : '')).setWidth(420).setHeight(580);
+  SpreadsheetApp.getUi().showModalDialog(html, '設定（時間数・下校時刻・持ち物）');
+}
+
+function settingsState() {
+  var S = settings_();
+  return { normal: S.normal, geko: S.geko, mondaySet: S.mondaySet, items: S.items, saved: !!PropertiesService.getDocumentProperties().getProperty('settings') };
+}
+
+/** 設定を保存して、連絡帳を書き直す（今週から先。設定が変わって文が変わるところは書き直す） */
+function saveSettings(x) {
+  var S = { normal: {}, geko: {}, mondaySet: String(x.mondaySet || '').trim(), items: [] };
+  DAYS.forEach(function (d) {
+    var n = parseInt(x.normal && x.normal[d], 10);
+    if (!(n >= 1 && n <= 6)) throw new Error(d + '曜のふだんの時間数を、1〜6で入れてください');
+    S.normal[d] = n;
+  });
+  ['1', '2', '3', '4', '5'].forEach(function (n) {
+    var t = String((x.geko && x.geko[n]) || '').trim().replace(/:/g, '：');
+    if (t) S.geko[n] = t;
+  });
+  (x.items || []).forEach(function (it) {
+    var sub = String(it.subject || '').trim(), item = String(it.item || '').trim();
+    if (sub && item) S.items.push({ subject: sub, item: item });
+  });
+  var props = PropertiesService.getDocumentProperties();
+  props.setProperty('settings', JSON.stringify(S));
+  settingsCache_ = null;
+  if (!props.getProperty('shuanId')) return '保存しました。週案をつなぐと、連絡帳に書きはじめます。';
+  var lock = LockService.getDocumentLock();
+  lock.waitLock(30000);
+  try { return '保存しました。\n' + summary_(run_({})); } finally { lock.releaseLock(); }
+}
+
+/** 週案から自動入力（今週から先）。手直しは週案の内容にもどる */
+function menuFill() {
+  var ui = SpreadsheetApp.getUi();
+  if (!PropertiesService.getDocumentProperties().getProperty('shuanId')) { ui.alert('先に「連絡帳 → はじめに：週案をつなぐ」をしてください。'); return; }
+  var ok = ui.alert('週案から自動入力', '連絡帳で直接手入力した内容が、週案の内容にもどります。よろしいですか？\n（今週から先の週の「時」「し」と、決まった持ち物が対象です。先生が書き足した持ち物と「連」はそのままです）', ui.ButtonSet.OK_CANCEL);
+  if (ok !== ui.Button.OK) return;
+  var lock = LockService.getDocumentLock();
+  lock.waitLock(30000);
+  try { ui.alert(summary_(run_({ force: true }))); } finally { lock.releaseLock(); }
+}
+
+function summary_(r) {
+  var s = [];
+  if (r.made.length) s.push('作ったタブ：' + r.made.join('、'));
+  s.push('書き直したマス：' + r.cells);
+  return s.concat(r.notes).join('\n');
+}
+
+// ---------- 自動のしかけ ----------
+function installTriggers_(shuanId) {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (['onShuanEdit', 'onShuanChange', 'autoSync'].indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('onShuanEdit').forSpreadsheet(shuanId).onEdit().create();
+  ScriptApp.newTrigger('onShuanChange').forSpreadsheet(shuanId).onChange().create();
+  ScriptApp.newTrigger('autoSync').timeBased().everyMinutes(10).create();
+}
+
+/** 週案が直されたとき：その週（と前の週の金曜の「時」）だけ見る */
+function onShuanEdit(e) {
+  var name = e && e.range ? e.range.getSheet().getName() : null;
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(25000)) return;
+  try { run_({ editedName: name }); } finally { lock.releaseLock(); }
+}
+
+/** 週案にタブを足した・名前を変えた・コピーしたとき：すぐに連絡帳のタブを作る（マスの書きかえは onShuanEdit） */
+function onShuanChange(e) {
+  if (e && e.changeType === 'EDIT') return;
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(25000)) return;
+  try { run_({}); } finally { lock.releaseLock(); }
+}
+
+/** 10分ごと：新しい週のタブを作り、今週から先を週案に合わせる（週案のメニューでタブを作ったときは、ここで気づく） */
+function autoSync() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) return;
+  try { run_({}); } finally { lock.releaseLock(); }
+}
+
+// ---------- 本体 ----------
+/** opt.force：手直しも週案にもどす。opt.editedName：直された週案のタブ。opt.mondays：この週だけ（タブを作ったとき） */
+function run_(opt) {
+  var props = PropertiesService.getDocumentProperties();
+  var shuanId = props.getProperty('shuanId');
+  if (!shuanId) throw new Error('週案がまだつながっていません');
+  var selfId = props.getProperty('selfId');
+  var ss = selfId ? SpreadsheetApp.openById(selfId) : SpreadsheetApp.getActiveSpreadsheet();
+  var shuan = SpreadsheetApp.openById(shuanId);
+  var sw = shuanWeeks_(shuan);
+  var byMon = {}; sw.forEach(function (w) { byMon[w.monday] = w; });
+  var thisMon = mondayOf_(todayIso_());
+  var lastMon = addDays_(thisMon, 7 * (AHEAD_WEEKS - 1));
+  var targets;
+  if (opt.mondays) targets = opt.mondays;
+  else if (opt.editedName) {
+    var hit = sw.filter(function (w) { return w.name === opt.editedName; })[0];
+    if (!hit) return { made: [], cells: 0, notes: [] };   // ひな形などのタブ
+    targets = [addDays_(hit.monday, -7), hit.monday].filter(function (m) { return m >= thisMon; });
+  } else targets = sw.map(function (w) { return w.monday; }).filter(function (m) { return m >= thisMon; });   // タブは先の週もすべて作る
+
+  var ctx = { shuan: shuan, byMon: byMon, cache: {}, templates: null };
+  var rk = renrakuWeeks_(ss);
+  var res = { made: [], cells: 0, notes: [] };
+  var all = !!(opt.force || opt.editedName || opt.mondays);
+  targets.forEach(function (mon) {
+    var sh = rk[mon], made = false;
+    if (!sh) {
+      if (!byMon[mon] && !opt.mondays) return;   // 週案にない週は、自動では作らない
+      sh = createWeekTab_(ss, mon, weekData_(ctx, mon));
+      if (!sh) { res.notes.push('ひな形（「原本」のタブ）が見つからないか、同じ名前のタブがあるので、' + mon + 'の週は作れませんでした'); return; }
+      rk[mon] = sh;
+      res.made.push(sh.getName());
+      made = true;
+    }
+    // 見比べるのは今週から AHEAD_WEEKS 週先までと、いま作ったタブ（先の週も、週案を直せば onShuanEdit で書き直す）
+    if (all || made || mon <= lastMon) res.cells += syncSheet_(sh, mon, ctx, !!opt.force);
+  });
+  return res;
+}
+
+// ---------- 週案を読む ----------
+/** 週案の週のタブ：[{ name, monday }]（タブの名前だけで決める。「1019」のような名前は前後のタブから） */
+function shuanWeeks_(shuan) {
+  var sy = schoolYear_();
+  var found = [];
+  shuan.getSheets().forEach(function (sh) {
+    var name = sh.getName();
+    if (isWeekName_(name)) found.push({ name: name, cands: mondayCandidates_(name, sy) });
+  });
+  return resolveMondays_(found);
+}
+
+/** その週の週案（なければ null）：{ ab, classes: { '1組': [日ごと {date, hol, event, subj{p}, orig{p}, n, hw}] }, tpl: { '1組': ひな形 } } */
+function weekData_(ctx, mon) {
+  if (ctx.cache[mon] !== undefined) return ctx.cache[mon];
+  var w = ctx.byMon[mon];
+  var out = null;
+  if (w) {
+    var sh = ctx.shuan.getSheetByName(w.name);
+    var vals = sh ? displayValues_(sh) : [];
+    var bgs = vals.length ? sh.getRange(1, 1, vals.length, vals[0].length).getBackgrounds() : [];
+    var shape = shapeOf_(vals);
+    if (Object.keys(shape.classes).length) {
+      out = { ab: shape.ab, classes: {}, tpl: {} };
+      Object.keys(shape.classes).forEach(function (cname) {
+        var cl = shape.classes[cname];
+        out.classes[cname] = DAYS.map(function (day, i) { return readDay_(vals, bgs, cl, day, addDays_(mon, i)); });
+        out.tpl[cname] = pickTemplate_(ctx, shape.ab, cname, out.classes[cname]);
+      });
+    }
+  }
+  ctx.cache[mon] = out;
+  return out;
+}
+
+function readDay_(vals, bgs, cl, day, date) {
+  var col = cl.dayCols[day];
+  var d = { date: date, day: day, hol: '', event: '', subj: {}, orig: {}, n: 0, hw: '' };
+  // 行事：曜日の見出し（と日付）の下から、朝学の上まで
+  var ev = [];
+  for (var r = cl.headRow + 1; r < cl.firstRow; r++) {
+    var v = clean_(at_(vals, col, r));
+    if (v && !/^(\d{1,2}[\/月])?\d{1,2}日?$/.test(norm_(v))) ev.push(v);
+  }
+  d.event = ev.join('・');
+  PERIODS.forEach(function (p) {
+    var r = cl.rows[p];
+    if (!r) return;
+    var raw = clean_(at_(vals, col, r));
+    if (!raw) return;
+    var parts = raw.split(/→|⇒/).map(clean_).filter(Boolean);   // 「算数→体育」は体育に変わった
+    d.orig[p] = parts[0] || '';
+    d.subj[p] = parts[parts.length - 1] || '';
+    if (d.subj[p]) d.n = Number(p);
+  });
+  // 行事が1日がかり（運動会のように、校時の下のマスにも同じ行事が半分以上）なら、時間割のかわりに行事を書く。ちがえば（「○○さん最終日」など）書かない
+  if (d.event && d.n) {
+    var hit = 0;
+    for (var q = 1; q <= d.n; q++) {
+      var rr = cl.rows[String(q)];
+      if (rr && [rr + 1, rr + 2].some(function (x) { var t = clean_(at_(vals, col, x)); return t && ev.some(function (e) { return t.indexOf(e) >= 0 || e.indexOf(t) >= 0; }); })) hit++;
+    }
+    if (hit * 2 < d.n) d.event = '';
+  }
+  if (cl.rows['宿題']) d.hw = String(at_(vals, col, cl.rows['宿題']) || '').split(/\n+/).map(clean_).filter(Boolean).join('、');
+  // 休み：週案でその日の1〜6校時がグレー、または祝日で授業がない日。名前は祝日の名前、なければ週案に書いた行事（「振替休業日」など）、なければ「休み」
+  var gray = 0, cells = 0;
+  PERIODS.forEach(function (p) { var r = cl.rows[p]; if (!r) return; cells++; if (isGray_((bgs[r - 1] || [])[col - 1])) gray++; });
+  var cal = holidayName_(date);
+  if ((cells && gray * 2 > cells) || (cal && !d.n)) d.hol = cal || d.event || '休み';
+  d.school = !d.hol && (d.n > 0 || !!d.event);
+  return d;
+}
+
+/** ふだんの時間割：週案のひな形（日付でないタブ）から、同じA週/B週で、この週の教科（変える前）にいちばん合うもの */
+function pickTemplate_(ctx, ab, cname, days) {
+  if (!ctx.templates) {
+    ctx.templates = [];
+    ctx.shuan.getSheets().forEach(function (sh) {
+      if (isWeekName_(sh.getName())) return;
+      var vals = displayValues_(sh, 40);
+      var shape = shapeOf_(vals);
+      if (!Object.keys(shape.classes).length) return;
+      // A週/B週はタブの名前を先に見る（中の「A週」のマスが直っていないひな形があるため）
+      var t = { name: sh.getName(), ab: (/([AB])週/.exec(norm_(sh.getName())) || [])[1] || shape.ab || null, classes: {} };
+      Object.keys(shape.classes).forEach(function (c) {
+        var cl = shape.classes[c], g = {};
+        DAYS.forEach(function (day) {
+          g[day] = {};
+          PERIODS.forEach(function (p) { if (cl.rows[p]) g[day][p] = clean_(at_(vals, cl.dayCols[day], cl.rows[p])); });
+        });
+        t.classes[c] = g;
+      });
+      ctx.templates.push(t);
+    });
+  }
+  var best = null, bestScore = -1;
+  ctx.templates.forEach(function (t) {
+    var g = t.classes[cname];
+    if (!g || (ab && t.ab && t.ab !== ab)) return;
+    var score = 0;
+    days.forEach(function (d) { PERIODS.forEach(function (p) { if (d.orig[p] && same_(d.orig[p], g[d.day][p])) score++; }); });
+    if (score > bestScore) { best = g; bestScore = score; }
+  });
+  return best;
+}
+
+// ---------- 連絡帳に書く文 ----------
+/** 1組・2組の1週分：日ごとに { 時, し, 持 }（わからないものは書かない＝undefined） */
+function weekTexts_(ctx, mon, cname) {
+  var cur = weekData_(ctx, mon);
+  if (!cur || !cur.classes[cname]) return null;
+  var out = [];
+  cur.classes[cname].forEach(function (d, i) {
+    if (!d.school) { out.push(null); return; }
+    var t = { し: d.hw };
+    // 次の学校の日（この週の中、なければ次の週）
+    var next = null, skipped = [], tpl = cur.tpl[cname];
+    for (var j = i + 1; j < 5 && !next; j++) { var x = cur.classes[cname][j]; if (x.school) next = x; else if (x.hol) skipped.push(x.day); }
+    var nextWeek = false;
+    if (!next) {
+      var nw = weekData_(ctx, addDays_(mon, 7));
+      if (nw && nw.classes[cname]) {
+        tpl = nw.tpl[cname];
+        for (var k = 0; k < 5 && !next; k++) { var y = nw.classes[cname][k]; if (y.school) next = y; else if (y.hol) skipped.push(y.day); }
+        nextWeek = true;
+      }
+    }
+    if (next) {
+      t['時'] = jiText_(next, tpl) + (skipped.length ? '　（' + skipped.map(function (s) { return s + '曜'; }).join('・') + 'は休み）' : '');
+      var items = [];
+      if (nextWeek) { if (settings_().mondaySet) items.push(settings_().mondaySet); }
+      else settings_().items.forEach(function (it) {
+        if (PERIODS.some(function (p) { return next.subj[p] && same_(next.subj[p], it.subject); })) items.push(it.item);
+      });
+      t['持'] = items.join('・');
+    }
+    out.push(t);
+  });
+  return out;
+}
+
+/** 「水曜　③体育　それ以外通り（13：15下校）」「金曜通り」「火曜①国語②算数…」 */
+function jiText_(d, tpl) {
+  var w = d.day, n = d.n;
+  var S = settings_();
+  var geko = n < S.normal[w] && S.geko[n] ? '（' + S.geko[n] + '下校）' : '';
+  if (d.event) return w + '曜　' + d.event + geko;
+  var base = null, bestScore = -1;
+  if (tpl) [w].concat(DAYS.filter(function (x) { return x !== w; })).forEach(function (x) {
+    var s = 0;
+    for (var p = 1; p <= n; p++) if (same_(d.subj[p], tpl[x][p])) s++;
+    if (s > bestScore) { base = x; bestScore = s; }
+  });
+  if (!base || bestScore * 2 < n) {   // ふだんの時間割とほとんどちがう：全部書く
+    var all = '';
+    for (var q = 1; q <= n; q++) all += MARU[q] + (d.subj[q] || '　');
+    return w + '曜' + all + geko;
+  }
+  var diffs = [];
+  for (var p2 = 1; p2 <= n; p2++) {
+    if (same_(d.subj[p2], tpl[base][p2])) continue;
+    var last = diffs[diffs.length - 1];
+    if (last && last.to === p2 - 1 && last.word === (d.subj[p2] || '')) { last.to = p2; last.nums += MARU[p2]; }
+    else diffs.push({ to: p2, nums: MARU[p2], word: d.subj[p2] || '' });
+  }
+  if (!diffs.length) return base + '曜通り' + geko;
+  return base + '曜　' + diffs.map(function (x) { return x.nums + x.word; }).join('　') + '　それ以外通り' + geko;
+}
+
+/** 教科が同じか（「家庭」と「家庭科」、「国語（書写）」と「国語」、「クラブ/委員会」と「委員会」は同じ） */
+function same_(a, b) {
+  var k = function (s) { return norm_(s).replace(/[（(].*?[)）]/g, '').replace(/^家庭$/, '家庭科').replace(/\s/g, ''); };
+  var A = String(a || '').split(/[\/／]/).map(k), B = String(b || '').split(/[\/／]/).map(k);
+  if (!k(a) && !k(b)) return true;
+  return A.some(function (x) { return x && B.indexOf(x) >= 0; });
+}
+
+// ---------- 連絡帳のタブ ----------
+/** 連絡帳の週のタブ：{ 月曜の日付: シート } */
+function renrakuWeeks_(ss) {
+  var sy = schoolYear_(), found = [], sheets = {};
+  ss.getSheets().forEach(function (sh) {
+    var name = sh.getName();
+    if (!isWeekName_(name)) return;
+    found.push({ name: name, cands: mondayCandidates_(name, sy) });
+    sheets[name] = sh;
+  });
+  var out = {};
+  resolveMondays_(found).forEach(function (w) { out[w.monday] = sheets[w.name]; });
+  return out;
+}
+
+/** 連絡帳の形：「5ー1」「5－2」の見出しの列から、月・日・曜日・見出し（時・し・持）・中身の列。日ごとの行 */
+function renrakuShape_(vals) {
+  var classes = [];
+  var row1 = vals[0] || [];
+  for (var c = 1; c <= row1.length; c++) {
+    var m = /^\d\s*[ー－\-−‐]\s*([1-9])/.exec(norm_(at_(vals, c, 1)));
+    if (m) classes.push({ cname: m[1] + '組', col: c });
+  }
+  classes.forEach(function (k) {
+    var wc = k.col + 2, lc = k.col + 3;
+    k.wdCol = wc; k.labelCol = lc; k.textCol = k.col + 4; k.days = {}; k.blocks = [];
+    var starts = [];
+    for (var r = 2; r <= vals.length; r++) if (DAYS.indexOf(norm_(at_(vals, wc, r))) >= 0) starts.push(r);
+    starts.forEach(function (r0, i) {
+      var end = i + 1 < starts.length ? starts[i + 1] - 1 : vals.length;
+      var rows = {}, all = [];
+      for (var r = r0; r <= end; r++) {
+        if (r > r0 && !norm_(at_(vals, lc, r)) && norm_(at_(vals, k.col, r))) break;   // 下の「☆予定や宿題に…」
+        all.push(r);
+        var lab = norm_(at_(vals, lc, r));
+        if (/^(時|し|持)$/.test(lab) && !rows[lab]) rows[lab] = r;
+      }
+      var blk = { start: r0, rows: rows, all: all };
+      k.blocks.push(blk);
+      var wi = DAYS.indexOf(norm_(at_(vals, wc, r0)));
+      if (k.days[wi] === undefined) k.days[wi] = blk;
+    });
+  });
+  return classes;
+}
+
+/** 1つの週のタブを週案に合わせる。書き直したマスの数を返す */
+function syncSheet_(sh, mon, ctx, force) {
+  var props = PropertiesService.getDocumentProperties();
+  var key = 'auto_' + mon;
+  var memo = JSON.parse(props.getProperty(key) || '{}');   // 前に自動で書いた文（手直ししたか見分けるため）
+  var cells = 0, today = todayIso_();
+  cells += syncHolidays_(sh, mon, ctx, memo, today);
+  var vals = sh.getDataRange().getDisplayValues();
+  renrakuShape_(vals).forEach(function (k) {
+    var texts = weekTexts_(ctx, mon, k.cname);
+    if (!texts) return;
+    texts.forEach(function (t, i) {
+      var day = k.days[i];
+      if (!t || !day || addDays_(mon, i) < today) return;   // 過ぎた日（もう配った）はさわらない
+      ['時', 'し', '持'].forEach(function (kind) {
+        var r = day.rows[kind];
+        if (!r || t[kind] === undefined) return;
+        var id = k.cname + '|' + i + '|' + kind;
+        var auto = t[kind], last = memo[id];
+        var now = String(at_(vals, k.textCol, r) || '');
+        var next = now;
+        if (kind === '持') {
+          var items = splitItems_(now), lastItems = splitItems_(last || '');
+          if (force || auto !== last) {
+            var rest = items.filter(function (x) { return lastItems.indexOf(x) < 0; });
+            var add = splitItems_(auto);
+            // 何も消さず、足すものもすでに書いてあれば、先生の書き方（「、」など）のまま
+            if (rest.length === items.length && add.every(function (x) { return items.indexOf(x) >= 0; })) next = now;
+            else next = add.concat(rest.filter(function (x) { return add.indexOf(x) < 0; })).join('・');
+          }
+        } else if (force) next = auto;
+        else if (auto !== last) next = (last === undefined && now.trim()) || now.trim() === auto ? now : auto;   // はじめて見るマスで、もう何か書いてあれば残す
+        if (force && now.trim() === auto) next = now;
+        memo[id] = auto;
+        if (next !== now) { sh.getRange(r, k.textCol).setValue(next); cells++; }
+      });
+    });
+  });
+  props.setProperty(key, JSON.stringify(memo));
+  return cells;
+}
+
+/** 休みの日（週案でグレー・祝日）を先生の形に：日の最初の行の見出しに休みの名前、ほかの行は空。休みでなくなったら「時・し・持」にもどす */
+function syncHolidays_(sh, mon, ctx, memo, today) {
+  var data = weekData_(ctx, mon);
+  if (!data) return 0;
+  var n = 0;
+  renrakuShape_(sh.getDataRange().getDisplayValues()).forEach(function (k) {
+    var days = data.classes[k.cname];
+    if (!days) return;
+    Object.keys(k.days).forEach(function (iStr) {
+      var i = Number(iStr), day = k.days[i];
+      if (addDays_(mon, i) < today) return;
+      var id = k.cname + '|' + i + '|休', want = days[i].hol, last = memo[id];
+      var cur = norm_(sh.getRange(day.start, k.labelCol).getDisplayValue());
+      var curHol = cur && !/^(時|し|持|連|音|も)$/.test(cur) ? cur : '';
+      var change = want ? (!curHol || (last !== undefined && cur !== want)) : (curHol && last);
+      memo[id] = want;
+      if (!change) return;
+      setDayLayout_(sh, k, day, want);
+      ['時', 'し', '持'].forEach(function (kind) { delete memo[k.cname + '|' + i + '|' + kind]; });
+      n++;
+    });
+  });
+  return n;
+}
+
+/** 1日分の行の見出しと中身。name があれば休み（最初の行に名前）、なければ「時・し・持」 */
+function setDayLayout_(sh, k, day, name) {
+  var block = sh.getRange(day.all[0], k.labelCol, day.all.length, 2);   // 見出しと中身の2列×その日の行
+  if (name) {   // 先生の形：見出しと中身のマスをその日の分ひとつにつなげて、休みの名前
+    block.breakApart().setValue('');
+    block.merge();
+    sh.getRange(day.all[0], k.labelCol).setValue(name);
+    return;
+  }
+  block.breakApart();
+  day.all.forEach(function (r, j) {
+    sh.getRange(r, k.textCol).setValue('');
+    sh.getRange(r, k.labelCol).setValue(name ? (j === 0 ? name : '') : (['時', 'し', '持'][j] || ''));
+  });
+}
+
+function splitItems_(s) { return String(s || '').split(/[・、,，\n]+/).map(clean_).filter(Boolean); }
+
+/** 新しい週のタブ：「原本」をコピーして、日付・曜日・A週/B週を入れ、中身を空にする。祝日は先生の形（見出しに祝日の名前） */
+function createWeekTab_(ss, mon, data) {
+  var all = ss.getSheets();
+  var tpl = all.filter(function (s) { return norm_(s.getName()).indexOf('原本') >= 0; })[0];
+  if (!tpl) return null;
+  // 名前は最初の学校の日（祝日の月曜はとばす。例「11/24」）
+  var first = mon;
+  for (var i = 0; i < 5 && holidayName_(first); i++) first = addDays_(mon, i + 1);
+  var fd = dateOf_(first);
+  var name = (fd.getUTCMonth() + 1) + '/' + fd.getUTCDate();
+  if (ss.getSheetByName(name)) return null;
+  var sh = tpl.copyTo(ss).setName(name);
+  // 場所：この週より前で、いちばん近い週のタブのすぐ右
+  var rk = renrakuWeeks_(ss), pos = 0;
+  var before = Object.keys(rk).filter(function (m) { return m < mon; }).sort().pop();
+  if (before) ss.getSheets().forEach(function (s, idx) { if (s.getName() === rk[before].getName()) pos = idx + 1; });
+  ss.setActiveSheet(sh);
+  ss.moveActiveSheet(pos ? pos + 1 : ss.getNumSheets());
+  var vals = sh.getDataRange().getDisplayValues();
+  var memo = {};
+  renrakuShape_(vals).forEach(function (k) {
+    if (data && data.ab) sh.getRange(1, k.wdCol).setValue(data.ab + '週');
+    var days = data && data.classes[k.cname];
+    // 曜日は上から順に月〜金と書きなおす（「原本」の曜日がずれていても、行の順で決める）
+    k.blocks.slice(0, 5).forEach(function (day, i) {
+      var d = dateOf_(addDays_(mon, i));
+      sh.getRange(day.start, k.wdCol).setValue(DAYS[i]);
+      // 休み：週案があれば週案（グレー・祝日）、なければカレンダーの祝日
+      var hol = days ? days[i].hol : holidayName_(addDays_(mon, i));
+      sh.getRange(day.start, k.col).setValue(i === 0 || d.getUTCDate() === 1 ? d.getUTCMonth() + 1 : '');
+      sh.getRange(day.start, k.col + 1).setValue(d.getUTCDate());
+      if (hol) setDayLayout_(sh, k, day, hol);
+      else day.all.forEach(function (r) { sh.getRange(r, k.textCol).setValue(''); });
+      memo[k.cname + '|' + i + '|休'] = hol;
+    });
+  });
+  PropertiesService.getDocumentProperties().setProperty('auto_' + mon, JSON.stringify(memo));
+  return sh;
+}
+
+// ---------- 週を選んでタブを作る（横のパネル） ----------
+function showSidebar() {
+  SpreadsheetApp.getUi().showSidebar(HtmlService.createHtmlOutput(SIDEBAR_HTML).setTitle('週を選んでタブを作る'));
+}
+
+function sidebarState() {
+  var id = PropertiesService.getDocumentProperties().getProperty('shuanId');
+  var rk = renrakuWeeks_(SpreadsheetApp.getActiveSpreadsheet());
+  var mons = Object.keys(rk).sort();
+  return { connected: !!id, from: mons.length ? addDays_(mons[mons.length - 1], 7) : mondayOf_(todayIso_()) };
+}
+
+function previewWeeks(from, to) {
+  if (!from || !to || from > to) return [];
+  var id = PropertiesService.getDocumentProperties().getProperty('shuanId');
+  var sw = id ? shuanWeeks_(SpreadsheetApp.openById(id)) : [];
+  var rk = renrakuWeeks_(SpreadsheetApp.getActiveSpreadsheet());
+  var out = [];
+  for (var m = mondayOf_(from); m <= to && out.length < 30; m = addDays_(m, 7)) {
+    var d = dateOf_(m);
+    out.push({ monday: m, label: (d.getUTCMonth() + 1) + '/' + d.getUTCDate() + 'の週', exists: !!rk[m], inShuan: sw.some(function (w) { return w.monday === m; }) });
+  }
+  return out;
+}
+
+function makeWeeks(from, to) {
+  var mons = previewWeeks(from, to).filter(function (w) { return !w.exists; }).map(function (w) { return w.monday; });
+  if (!mons.length) throw new Error('作る週がありません');
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try { return run_({ mondays: mons }); } finally { lock.releaseLock(); }
+}
+
+var SIDEBAR_HTML = '<!doctype html><html><head><base target="_top"><meta charset="utf-8"><style>' +
+  'body{font-family:sans-serif;font-size:13px;margin:10px;color:#222}h3{margin:14px 0 6px;font-size:14px}' +
+  'table{border-collapse:collapse;margin:6px 0;font-size:12px}td{border:1px solid #bbb;padding:2px 6px}.ng{color:#c00}.help{color:#555;font-size:12px}' +
+  'button.primary{background:#1a73e8;color:#fff;border:0;border-radius:4px;padding:8px 14px;font-size:13px}.dis{color:#999}' +
+  '</style></head><body>' +
+  '<p class="help">週案にある週は、時間割・宿題・決まった持ち物も書きます。週案にない週は、日付だけのタブになります。</p>' +
+  '<h3>期間</h3><input type="date" id="from"> から<br><input type="date" id="to"> まで<div id="weeks"></div><div id="msg"></div>' +
+  '<script>' +
+  'function $(i){return document.getElementById(i)}function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;")}' +
+  'function run(fn,args,ok){var r=google.script.run.withSuccessHandler(ok).withFailureHandler(function(e){$("msg").innerHTML="<p class=ng>"+esc(e.message||e)+"</p>"});r[fn].apply(r,args)}' +
+  'function weeks(){var f=$("from").value,t=$("to").value;if(!f||!t){$("weeks").innerHTML="";return}run("previewWeeks",[f,t],function(ws){' +
+  ' if(!ws.length){$("weeks").innerHTML="<p class=ng>期間を確かめてください</p>";return}var n=ws.filter(function(w){return!w.exists}).length;' +
+  ' $("weeks").innerHTML="<table>"+ws.map(function(w){return"<tr class=\\""+(w.exists?"dis":"")+"\\"><td>"+esc(w.label)+"</td><td>"+(w.exists?"もうあるので作りません":w.inShuan?"作る":"作る（週案にないので日付だけ）")+"</td></tr>"}).join("")+"</table>"+(n?"<button class=primary id=make>タブを作る（"+n+"週）</button>":"");' +
+  ' if($("make"))$("make").onclick=function(){$("make").disabled=true;$("make").textContent="作っています…";$("msg").innerHTML="";run("makeWeeks",[f,t],function(r){$("msg").innerHTML="<p><b>作りました：</b>"+esc(r.made.join("、"))+"</p>"+r.notes.map(function(x){return"<p class=ng>"+esc(x)+"</p>"}).join("");weeks()})}' +
+  '})}' +
+  'run("sidebarState",[],function(s){if(!s.connected)$("msg").innerHTML="<p class=ng>先に「連絡帳 → はじめに：週案をつなぐ」をしてください。</p>";$("from").value=s.from;$("from").onchange=weeks;$("to").onchange=weeks})' +
+  '</script></body></html>';
+
+// ---------- 週案の形を読む（週案のメニューと同じ読み方） ----------
+function displayValues_(sh, maxRows) {
+  var r = sh.getLastRow(), c = sh.getLastColumn();
+  if (maxRows) r = Math.min(r, maxRows);
+  if (!r || !c) return [];
+  return sh.getRange(1, 1, r, c).getDisplayValues();
+}
+
+function shapeOf_(vals) {
+  var maxR = vals.length, maxC = maxR ? vals[0].length : 0;
+  var classes = {}, ab = null;
+  for (var r = 1; r <= Math.min(maxR, 4); r++) for (var c = 1; c <= maxC; c++) {
+    var v = norm_(at_(vals, c, r));
+    if (/^\d+組$/.test(v)) {
+      var dayCols = {};
+      for (var k = 1; k <= 7; k++) { var dv = norm_(at_(vals, c + k, r)); if (DAYS.indexOf(dv) >= 0) dayCols[dv] = c + k; }
+      if (Object.keys(dayCols).length < 5 && DAYS.filter(function (d, i) { return norm_(at_(vals, c + 1 + i, r)) === d; }).length >= 4) {
+        DAYS.forEach(function (d, i) { dayCols[d] = c + 1 + i; });
+      }
+      if (Object.keys(dayCols).length === 5) classes[v] = { labelCol: c, headRow: r, dayCols: dayCols, rows: {} };
+    }
+    if (!ab && /^[AB]週$/.test(v)) ab = v.charAt(0);
+  }
+  Object.keys(classes).forEach(function (n) {
+    var cl = classes[n];
+    for (var r = cl.headRow + 1; r <= maxR; r++) {
+      var lab = norm_(at_(vals, cl.labelCol, r));
+      if (/^(朝学|朝学習|モジュール)$/.test(lab)) cl.rows['朝'] = r;
+      else if (/^[1-6](\.0+)?$/.test(lab) && !cl.rows[String(parseInt(lab, 10))]) cl.rows[String(parseInt(lab, 10))] = r;
+      else if (lab === '宿題') { cl.rows['宿題'] = r; break; }
+    }
+    cl.firstRow = cl.rows['朝'] || cl.rows['1'] || cl.headRow + 1;
+  });
+  return { classes: classes, ab: ab };
+}
+
+/** タブの名前（「1214」「12/14」「12月14日」）から月曜日の候補（祝日の週は火曜の名前のこともある） */
+function mondayCandidates_(name, schoolYear) {
+  var digits = norm_(name);
+  var sl = /^(\d{1,2})(?:\/|月)(\d{1,2})日?$/.exec(digits);
+  if (sl) digits = sl[1] + ('0' + sl[2]).slice(-2);
+  if (!/^\d{2,4}$/.test(digits)) return [];
+  var out = [];
+  (sl ? [sl[1].length] : [1, 2]).forEach(function (k) {
+    var m = Number(digits.slice(0, k)), d = Number(digits.slice(k));
+    if (digits.length - k < 1 || digits.length - k > 2 || m < 1 || m > 12 || d < 1 || d > 31) return;
+    var named = new Date(Date.UTC(m >= 4 ? schoolYear : schoolYear + 1, m - 1, d));
+    if (named.getUTCMonth() !== m - 1) return;
+    for (var back = 0; back <= 4; back++) {
+      var mon = new Date(named.getTime() - back * 86400000);
+      if (mon.getUTCDay() === 1 && out.indexOf(iso_(mon)) < 0) out.push(iso_(mon));
+    }
+  });
+  return out;
+}
+
+/** 「105」のように決めきれないタブは、前後のタブの日付から決める */
+function resolveMondays_(found) {
+  found.forEach(function (w, i) {
+    if (w.cands.length === 1) { w.monday = w.cands[0]; return; }
+    var prev = '', next = '9999';
+    for (var j = i - 1; j >= 0; j--) if (found[j].monday) { prev = found[j].monday; break; }
+    for (var j2 = i + 1; j2 < found.length; j2++) if (found[j2].cands.length === 1) { next = found[j2].cands[0]; break; }
+    var fit = w.cands.filter(function (c) { return c > prev && c < next; });
+    w.monday = fit.length === 1 ? fit[0] : null;
+  });
+  var seen = {};
+  return found.filter(function (w) { if (!w.monday || seen[w.monday]) return false; seen[w.monday] = true; return true; })
+    .map(function (w) { return { name: w.name, monday: w.monday }; })
+    .sort(function (a, b) { return a.monday < b.monday ? -1 : a.monday > b.monday ? 1 : 0; });
+}
+
+function isWeekName_(name) { return /^\s*\d{1,2}(?:[\/／月]\d{1,2}日?|\d{1,3})\s*$/.test(norm_(name)); }
+
+// ---------- 祝日（カレンダーどおり。週案のメニューと同じ計算） ----------
+function holidayName_(iso) { return holidaysOf_(Number(iso.slice(0, 4)))[iso] || ''; }
+
+function holidaysOf_(y) {
+  var h = {};
+  var put = function (m, d, name) { h[y + '-' + pad_(m) + '-' + pad_(d)] = name; };
+  var nthMonday = function (m, n) { var first = new Date(Date.UTC(y, m - 1, 1)).getUTCDay(); return 1 + ((8 - first) % 7) + (n - 1) * 7; };
+  var shunbun = Math.floor(20.8431 + 0.242194 * (y - 1980) - Math.floor((y - 1980) / 4));
+  var shubun = Math.floor(23.2488 + 0.242194 * (y - 1980) - Math.floor((y - 1980) / 4));
+  put(1, 1, '元日'); put(1, nthMonday(1, 2), '成人の日'); put(2, 11, '建国記念の日'); put(2, 23, '天皇誕生日');
+  put(3, shunbun, '春分の日'); put(4, 29, '昭和の日'); put(5, 3, '憲法記念日'); put(5, 4, 'みどりの日'); put(5, 5, 'こどもの日');
+  put(7, nthMonday(7, 3), '海の日'); put(8, 11, '山の日'); put(9, nthMonday(9, 3), '敬老の日'); put(9, shubun, '秋分の日');
+  put(10, nthMonday(10, 2), 'スポーツの日'); put(11, 3, '文化の日'); put(11, 23, '勤労感謝の日');
+  Object.keys(h).sort().forEach(function (k) {
+    var mid = addDays_(k, 1), next = addDays_(k, 2);
+    if (h[next] && !h[mid] && dateOf_(mid).getUTCDay() !== 0) h[mid] = '国民の休日';
+  });
+  Object.keys(h).sort().forEach(function (k) {
+    if (dateOf_(k).getUTCDay() !== 0 || h[k] === '振替休日') return;
+    var d = addDays_(k, 1);
+    while (h[d]) d = addDays_(d, 1);
+    h[d] = '振替休日';
+  });
+  return h;
+}
+
+/** グレー（白・黒はのぞく）なら true。'#rrggbb' の赤・緑・青がほぼ同じ（週案のメニューと同じ） */
+function isGray_(hex) {
+  var m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex || ''));
+  if (!m) return false;
+  var v = [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)];
+  var max = Math.max.apply(null, v), min = Math.min.apply(null, v);
+  return max - min <= 12 && max < 250 && max > 20;
+}
+
+// ---------- 小さな道具 ----------
+function norm_(v) { return String(v == null ? '' : v).normalize('NFKC').replace(/\s+/g, ' ').trim(); }
+function clean_(v) { return String(v == null ? '' : v).replace(/[\s　]+/g, ' ').trim(); }
+function at_(vals, c, r) { return (vals[r - 1] || [])[c - 1]; }
+function pad_(n) { return ('0' + n).slice(-2); }
+function iso_(d) { return d.getUTCFullYear() + '-' + pad_(d.getUTCMonth() + 1) + '-' + pad_(d.getUTCDate()); }
+function dateOf_(s) { var p = s.split('-').map(Number); return new Date(Date.UTC(p[0], p[1] - 1, p[2])); }
+function addDays_(s, n) { return iso_(new Date(dateOf_(s).getTime() + n * 86400000)); }
+function mondayOf_(s) { return addDays_(s, -((dateOf_(s).getUTCDay() + 6) % 7)); }
+function todayIso_() { var d = new Date(); return d.getFullYear() + '-' + pad_(d.getMonth() + 1) + '-' + pad_(d.getDate()); }
+function schoolYear_() { var d = new Date(); return d.getMonth() + 1 >= 4 ? d.getFullYear() : d.getFullYear() - 1; }
+
+
+var SETTINGS_HTML = '<!doctype html><html><head><base target="_top"><meta charset="utf-8"><style>' +
+  'body{font-family:sans-serif;font-size:13px;margin:4px 10px;color:#222}h3{margin:14px 0 4px;font-size:14px}' +
+  'table{border-collapse:collapse;font-size:13px}td,th{padding:2px 4px;text-align:left}.help{color:#555;font-size:12px;margin:2px 0 6px}' +
+  'input[type=number]{width:3.2em}input[type=time]{font-size:13px}input[type=text]{width:9em}.ng{color:#c00;white-space:pre-wrap}.ok{white-space:pre-wrap}' +
+  'button.primary{background:#1a73e8;color:#fff;border:0;border-radius:4px;padding:8px 18px;font-size:13px;margin-top:12px}' +
+  '</style></head><body>' +
+  '<div id="msg0"></div>' +
+  '<h3>ふだんの時間数</h3><p class="help">これより早く終わる日だけ、連絡帳に下校時刻を書きます。</p><div id="normal"></div>' +
+  '<h3>下校時刻</h3><p class="help">○時間目までの日の下校時刻。使わないところは空のままで。</p><table id="geko"></table>' +
+  '<h3>持ち物</h3><p class="help">次の日にこの教科があるとき、「持」に書きます。</p><table id="items"></table>' +
+  '<p class="help">次の日が次の週（金曜など）のとき： <input type="text" id="mondaySet"></p>' +
+  '<button class="primary" id="save">保存する</button><div id="msg"></div>' +
+  '<script>' +
+  'var FIRST="__FIRST__",D=["月","火","水","木","金"];' +
+  'function $(i){return document.getElementById(i)}' +
+  'function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;")}' +
+  'function hm(t){var m=/(\\d{1,2})[:：](\\d{2})/.exec(t||"");return m?("0"+m[1]).slice(-2)+":"+m[2]:""}' +
+  'google.script.run.withSuccessHandler(function(s){' +
+  ' $("normal").innerHTML=D.map(function(d){return d+" <input type=number min=1 max=6 id=\\"n"+d+"\\" value=\\""+s.normal[d]+"\\">"}).join("　");' +
+  ' $("geko").innerHTML=[1,2,3,4,5].map(function(n){return"<tr><td>"+n+"時間目までの日</td><td><input type=time id=\\"g"+n+"\\" value=\\""+hm(s.geko[n])+"\\"></td></tr>"}).join("");' +
+  ' var it=s.items.slice();while(it.length<5)it.push({subject:"",item:""});' +
+  ' $("items").innerHTML="<tr><th>教科</th><th>持ち物</th></tr>"+it.map(function(x,i){return"<tr><td><input type=text id=\\"s"+i+"\\" value=\\""+esc(x.subject)+"\\" placeholder=\\"例：体育\\"></td><td><input type=text id=\\"i"+i+"\\" value=\\""+esc(x.item)+"\\" placeholder=\\"例：体そう服\\"></td></tr>"}).join("");' +
+  ' $("items").setAttribute("data-n",it.length);$("mondaySet").value=s.mondaySet;' +
+  ' if(FIRST&&!s.saved)$("msg0").innerHTML="<p class=ng>いまは5年生の決まりが入っています。自分の学年に合わせて直して、保存してください。</p>";' +
+  '}).settingsState();' +
+  '$("save").onclick=function(){var x={normal:{},geko:{},items:[],mondaySet:$("mondaySet").value};' +
+  ' D.forEach(function(d){x.normal[d]=$("n"+d).value});[1,2,3,4,5].forEach(function(n){x.geko[n]=$("g"+n).value});' +
+  ' for(var i=0;i<+$("items").getAttribute("data-n");i++)x.items.push({subject:$("s"+i).value,item:$("i"+i).value});' +
+  ' $("save").disabled=true;$("save").textContent="保存しています…";' +
+  ' google.script.run.withSuccessHandler(function(m){$("msg").innerHTML="<p class=ok>"+esc(m)+"</p>";$("save").textContent="閉じる";$("save").disabled=false;$("save").onclick=function(){google.script.host.close()}})' +
+  ' .withFailureHandler(function(e){$("msg").innerHTML="<p class=ng>"+esc(e.message||e)+"</p>";$("save").disabled=false;$("save").textContent="保存する"}).saveSettings(x)};' +
+  '</script></body></html>';

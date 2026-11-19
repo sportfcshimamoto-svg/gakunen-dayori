@@ -97,9 +97,19 @@
   .t-year p { color: var(--sub); }
   .t-year .art { right: 24px; top: 24px; width: 76px; }
 
+  /* 毎週・自動：連絡帳（山吹・週案のとなり） */
+  .t-note { grid-column: span 5; grid-row: span 1; background: #f8f0dc; color: var(--ink); border: 1px solid #ecdcb4; }
+  .t-note .freq, .t-note .go { color: #94660f; }
+  .t-note h2 { font-size: 26px; }
+  .t-note p { color: var(--sub); }
+  .t-note .art { right: 22px; top: 22px; width: 84px; }
+  /* 時数表は年に数回なので、いちばん下に横長で控えめに */
+  .t-year { grid-column: span 12; }
+
+  .t-note .freq, .t-note h2, .t-note p { padding-right: 104px; }
   .t-month .freq, .t-month h2, .t-month p { padding-right: 110px; }
   .t-year .freq, .t-year h2, .t-year p { padding-right: 96px; }
-  @media (max-width: 420px) { .freq .en { display: none; } .t-month .art, .t-year .art { width: 56px; } .t-month .freq, .t-month h2, .t-month p, .t-year .freq, .t-year h2, .t-year p { padding-right: 64px; } }
+  @media (max-width: 420px) { .freq .en { display: none; } .t-note .art, .t-month .art, .t-year .art { width: 56px; } .t-note .freq, .t-note h2, .t-note p, .t-month .freq, .t-month h2, .t-month p, .t-year .freq, .t-year h2, .t-year p { padding-right: 64px; } }
 
   footer { margin-top: 64px; border-top: 1px solid var(--line); }
   footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; padding-top: 22px; padding-bottom: 40px; font-size: 12px; color: var(--sub); letter-spacing: .04em; }
@@ -108,7 +118,7 @@
   @media (max-width: 880px) {
     .hero { grid-template-columns: 1fr; gap: 16px; padding: 36px 0 32px; }
     .bento { grid-template-columns: 1fr; gap: 16px; }
-    .t-week, .t-month, .t-year { grid-column: auto; grid-row: auto; }
+    .t-week, .t-note, .t-month, .t-year { grid-column: auto; grid-row: auto; }
     .t-week { min-height: 340px; }
     .tile { padding: 26px 24px; }
     .t-week .art { width: 240px; }
@@ -148,6 +158,22 @@
           <circle cx="90" cy="200" r="7"/><circle cx="120" cy="200" r="7"/><circle cx="150" cy="200" r="7"/>
         </g>
         <circle cx="150" cy="140" r="11" fill="#c4502f"/>
+      </svg>
+    </a>
+
+    <!-- 毎週・自動：連絡帳自動入力 -->
+    <a class="tile t-note" href="renrakucho.html">
+      <div class="freq"><span class="en">AUTO</span> <b>週案と連動</b></div>
+      <h2>連絡帳自動入力</h2>
+      <p>週案を直すと、連絡帳の時間割・宿題・持ち物も自動で直ります。</p>
+      <span class="go"><i><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></i>開く</span>
+      <!-- 飾り：とじひものある連絡帳と、時・し・持の行 -->
+      <svg class="art" viewBox="0 0 84 84" aria-hidden="true">
+        <rect x="14" y="6" width="60" height="74" rx="6" fill="#fff" stroke="#e2c98f"/>
+        <rect x="14" y="6" width="12" height="74" rx="5" fill="#e9d29b"/>
+        <g fill="#94660f"><circle cx="20" cy="20" r="2.2"/><circle cx="20" cy="43" r="2.2"/><circle cx="20" cy="66" r="2.2"/></g>
+        <path d="M34 24h30M34 40h26M34 56h30" stroke="#d2b06a" stroke-width="3" stroke-linecap="round"/>
+        <path d="M33 66l5 5 9-10" fill="none" stroke="#c4502f" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     </a>
 

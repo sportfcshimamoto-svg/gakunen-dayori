@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<!-- 通信の制限：このページの素材以外には接続できないようにする -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>連絡帳自動入力</title>
+<link rel="stylesheet" href="jisu.css">
+<style>
+    table.rules { border-collapse: collapse; font-size: 14px; margin: 4px 0 8px; }
+  table.rules th, table.rules td { border: 1px solid var(--line); padding: 5px 10px; text-align: left; vertical-align: top; }
+  table.rules th { background: #f0f2f5; white-space: nowrap; }
+  h2.part { font-family: var(--mincho); font-size: 17px; letter-spacing: .06em; margin: 22px 0 10px; }
+  h2.part:first-child { margin-top: 4px; }
+  .warnbox { background: #fff; border: 1px solid var(--line); border-left: 4px solid var(--shu); border-radius: 6px; padding: 8px 12px; margin: 6px 0; font-size: 14px; }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brandrow">
+    <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><ellipse cx="16.5" cy="22.5" rx="13" ry="5" fill="#162b47"/><ellipse cx="16.5" cy="21" rx="13" ry="5" fill="#1f3a5f"/><g transform="rotate(-16 4 18)"><ellipse cx="16.5" cy="17" rx="13" ry="5" fill="#a23f23"/><ellipse cx="16.5" cy="15.5" rx="13" ry="5" fill="#c4502f"/></g><rect x="2" y="13" width="4.4" height="12" rx="2.2" fill="none" stroke="#1d2430" stroke-width="1.6"/></svg>
+    <span class="brand">カスタネット</span>
+  </div>
+  <nav class="pages"><a class="home" href="./"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="1.5" width="6" height="7.5" rx="1.6"/><rect x="9.5" y="1.5" width="5" height="4" rx="1.4"/><rect x="9.5" y="7.5" width="5" height="7" rx="1.4"/><rect x="1.5" y="11" width="6" height="3.5" rx="1.4"/></svg>トップ</a><a href="menu.html">週案スプレッドシート改良ガイド</a><a class="on" href="renrakucho.html">連絡帳自動入力</a><a href="dayori.html">学年だより作成</a><a href="jisu.html">授業時数算出シート自動入力</a></nav>
+  <p class="lead">週案を直すと、連絡帳（Googleスプレッドシート）の時間割・宿題・決まった持ち物も自動で直ります。</p>
+</header>
+<main>
+  <h2 class="part">はじめに1回：連絡帳にプログラムを入れる</h2>
+  <section class="step">
+    <h2><span class="num">1</span>プログラムをコピーする</h2>
+    <div class="row"><button id="copy" class="primary" disabled>読み込み中…</button><span id="msg" class="help"></span></div>
+  </section>
+  <section class="step">
+    <h2><span class="num">2</span>連絡帳に貼る</h2>
+    <ol>
+      <li>連絡帳を開き、上のメニューの「<b>拡張機能</b>」→「<b>Apps Script</b>」を押す（新しいタブが開く）</li>
+      <li>真ん中の <code>function myFunction() { }</code> をクリックし、<b>Ctrl + A</b> → <b>Delete</b> で消す</li>
+      <li><b>Ctrl + V</b> で貼り、上の 💾（保存）を押す</li>
+    </ol>
+  </section>
+  <section class="step">
+    <h2><span class="num">3</span>動かして許可する</h2>
+    <ol>
+      <li>Apps Script の画面の上で、「▶ 実行」の右の欄を「<b>onOpen</b>」にして「<b>▶ 実行</b>」を押す</li>
+      <li>「承認が必要です」と出たら「権限を確認」→ 自分のアカウント →（「確認されていません」と出たら「詳細」→「移動」）→「許可」</li>
+      <li>連絡帳のタブにもどると、上のメニューに「<b>連絡帳</b>」が出ます</li>
+    </ol>
+  </section>
+  <section class="step">
+    <h2><span class="num">4</span>週案をつなぐ</h2>
+    <ol>
+      <li>連絡帳のメニュー「<b>連絡帳</b>」→「<b>はじめに：週案をつなぐ</b>」</li>
+      <li>週案のリンク（週案を開いたときの上のアドレス）を貼って「OK」</li>
+      <li>もう一度「許可」を聞かれたら、3と同じように許可する（週案を読むため・自動で動かすため）</li>
+      <li>「<b>設定</b>」の画面が出るので、自分の学年の<b>ふだんの時間数</b>・<b>下校時刻</b>・<b>持ち物</b>を入れて「保存する」（はじめは5年生の決まりが入っています）</li>
+    </ol>
+    <p class="help">これで終わりです。週案にある今週から先の週のタブができて、時間割・宿題・持ち物が入ります。週案はプログラムが読むだけで、書きかえません。</p>
+  </section>
+
+  <h2 class="part">しくみと決まり</h2>
+  <section class="step">
+    <h2><span class="num">A</span>週のタブを作る</h2>
+    <ul>
+      <li><b>自動で</b>：週案に新しい週のタブができると、連絡帳にも同じ週のタブが自動でできます（週案に足したタブは、すぐに。週案のメニュー「週のタブを作る」で作ったタブは、10分以内に。「原本」のタブをもとに作ります）</li>
+      <li><b>週を選んで</b>：連絡帳のメニューから期間を選んで、まとめて作ることもできます（足りない週があるときなど）</li>
+    </ul>
+    <p class="help"><b>休みの日</b>：週案でグレーの日と祝日は、先生の形（「時」のところに「敬老の日」などの名前、ほかの行は空）にします。グレーで祝日でない日は、週案に書いた行事（「振替休業日」など）、なければ「休み」。前の日の「時」には「（月曜は休み）」と書きます。</p>
+    <p class="help">連絡帳にもうある週は作りません。週を選ぶときは、メニュー「連絡帳」→「週を選んでタブを作る」。</p>
+  </section>
+
+  <section class="step">
+    <h2><span class="num">B</span>自動で書くもの・先生が書くもの</h2>
+    <table class="rules">
+      <tr><th>時</th><td>次の日の時間割。週案で変わったところだけ（例：火曜　①体育　それ以外通り）と、早く帰る日の下校時刻</td></tr>
+      <tr><th>し</th><td>週案の「宿題」の行</td></tr>
+      <tr><th>持</th><td>決まった持ち物（月曜セット・体そう服など）。絵の具セットなどは先生が書く</td></tr>
+      <tr><th>連</th><td>先生が書く（週案に書く行がないため）</td></tr>
+    </table>
+    <p class="help">連絡帳の「5-1」「5-2」（3クラスなら「5-3」も）の列に、週案の1組・2組・3組から書きます。週案と連絡帳は、5年生の形をコピーして使ってください。</p>
+  </section>
+
+  <section class="step">
+    <h2><span class="num">C</span>下校時刻（学年ごとに設定）</h2>
+    <p class="help">メニュー「連絡帳」→「<b>設定（時間数・下校時刻・持ち物）</b>」で、いつでも直せます。はじめは5年生の決まりです：</p>
+    <table class="rules">
+      <tr><th>3時間目まで</th><td>11時35分下校</td></tr>
+      <tr><th>4時間目まで＋給食</th><td>13時15分下校</td></tr>
+      <tr><th>5時間目まで</th><td>14時20分下校</td></tr>
+    </table>
+    <p class="help">いつもより早く帰る日だけ書きます（月・火・木・金はふつう6時間、水はふつう5時間）。</p>
+  </section>
+
+  <section class="step">
+    <h2><span class="num">D</span>いちばん新しく直したほうが残る</h2>
+    <ul>
+      <li>連絡帳で手で直したところは、そのまま残ります</li>
+      <li>そのあと週案のその日を直すと、連絡帳もその日のところだけ週案の内容になります</li>
+      <li>週案を直すと、ふつうは数秒で連絡帳に出ます（おそくても10分以内）</li>
+      <li>過ぎた日（もう配った日）は書きかえません</li>
+    </ul>
+  </section>
+
+  <section class="step">
+    <h2><span class="num">E</span>連絡帳のメニュー「週案から自動入力」</h2>
+    <p>ふだんは押さなくても自動で直ります。全部を週案に合わせたいときだけ押します。押すと注意が出ます。</p>
+    <div class="warnbox">連絡帳で直接手入力した内容が、週案の内容にもどります。よろしいですか？</div>
+  </section>
+</main>
+<script src="renrakucho.js"></script>
+</body>
+</html>
