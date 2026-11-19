@@ -17,7 +17,7 @@ var SHORT = { 国: '国語', 社: '社会', 算: '算数', 理: '理科', 生: '
 
 // ---------- メニュー・画面 ----------
 function onOpen() {
-  SpreadsheetApp.getUi().createMenu('週案').addItem('週のタブを作る', 'showSidebar').addItem('今ある週のタブの日付を直す', 'fixDates').addToUi();
+  SpreadsheetApp.getUi().createMenu('週案').addItem('週のタブを作る', 'showSidebar').addToUi();
 }
 
 function showSidebar() {
@@ -263,25 +263,6 @@ function writeDates_(sh, week, vals, shape) {
     });
   });
   return notes;
-}
-
-/** メニュー「今ある週のタブの日付を直す」：タブの名前から月〜金の日付を書き直す（教科やメモはさわらない） */
-function fixDates() {
-  var ui = SpreadsheetApp.getUi();
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var weeks = existingWeeks_();
-  if (!weeks.length) { ui.alert('日付の名前（例：4月6日）の週のタブが見つかりませんでした'); return; }
-  var ans = ui.alert('日付を直す', weeks.length + 'このタブ（' + weeks[0].name + '〜' + weeks[weeks.length - 1].name +
-    '）の月〜金の日付を、タブの名前に合わせて書き直します。教科やメモはそのままです。よろしいですか？', ui.ButtonSet.OK_CANCEL);
-  if (ans !== ui.Button.OK) return;
-  var notes = [];
-  weeks.forEach(function (w) {
-    var sh = ss.getSheetByName(w.name);
-    var vals = displayValues_(sh, 6);
-    notes = notes.concat(writeDates_(sh, w, vals, shapeOf_(vals)));
-  });
-  SpreadsheetApp.flush();
-  ui.alert('直しました（' + weeks.length + 'タブ）' + (notes.length ? '\n' + notes.join('\n') : ''));
 }
 
 // ---------- 時間割を読む ----------
