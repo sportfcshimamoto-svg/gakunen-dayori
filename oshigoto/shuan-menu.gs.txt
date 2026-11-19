@@ -254,9 +254,9 @@ function fillWeek_(sh, week, grids, colorSrc) {
         var n = cl.lastRow - cl.firstRow + 1;
         var blank = []; for (var k = 0; k < n; k++) blank.push(['']);
         sh.getRange(cl.firstRow, col, n, 1).setValues(blank);   // 前の週のメモを消す（書式は残る）
-        if (sameShape && scl.dayCols[day]) {   // 色はひな形から（前の週の休みのグレーなどをうつさない）
-          sh.getRange(cl.firstRow, col, n, 1).setBackgrounds(colorSrc.getRange(cl.firstRow, scl.dayCols[day], n, 1).getBackgrounds());
-        }
+        // 色はひな形から（前の週の休みのグレーなどをうつさない）。グレーだけ残し、黄色などほかの色は色なしにする
+        var bgs = (sameShape && scl.dayCols[day] ? colorSrc.getRange(cl.firstRow, scl.dayCols[day], n, 1) : sh.getRange(cl.firstRow, col, n, 1)).getBackgrounds();
+        sh.getRange(cl.firstRow, col, n, 1).setBackgrounds(bgs.map(function (row) { return [isGray_(row[0]) ? row[0] : null]; }));
         if (hol) {   // 祝日：朝学〜6校時の下までグレー
           var end = cl.rows['6'] ? cl.rows['6'] + 2 : cl.lastRow;
           sh.getRange(cl.firstRow, col, end - cl.firstRow + 1, 1).setBackground(HOLIDAY_GRAY);
@@ -278,6 +278,15 @@ function fillWeek_(sh, week, grids, colorSrc) {
 
 // ---------- 祝日（カレンダーどおり。外のサービスは使わず、法律の決まりで計算する） ----------
 var HOLIDAY_GRAY = '#cccccc';
+
+/** グレー（白・黒はのぞく）なら true。'#rrggbb' の赤・緑・青がほぼ同じ */
+function isGray_(hex) {
+  var m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex || ''));
+  if (!m) return false;
+  var v = [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)];
+  var max = Math.max.apply(null, v), min = Math.min.apply(null, v);
+  return max - min <= 12 && max < 250 && max > 20;
+}
 
 /** 'YYYY-MM-DD' が祝日なら名前、ちがえば '' */
 function holidayName_(iso) {
