@@ -58,6 +58,7 @@ button.big { font-size: 1.1em; padding: 10px 22px; }
 .brandrow { display: flex; align-items: center; gap: 12px; height: 64px; }
 .mark { width: 30px; height: 30px; flex: none; }
 .brand { font-family: var(--mincho); font-weight: 600; font-size: 19px; letter-spacing: .12em; }
+.brand .ver { margin-left: .5em; font-size: .62em; font-weight: 500; letter-spacing: .04em; opacity: .55; }
 .pages a.home { display: inline-flex; align-items: center; gap: 6px; }
 .pages .ico { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.5; }
 .pages { display: flex; gap: 6px 22px; flex-wrap: wrap; }
