@@ -12,16 +12,17 @@
 
 var DAYS = ['月', '火', '水', '木', '金'];
 var SLOTS = ['朝', '1', '2', '3', '4', '5', '6'];
+var GRADE = '５年生';   // 学年。メニューの名前に出る（学年ごとに週案のルールが少しちがうため）
 var CLASSES = ['1組', '2組'];
 var SHORT = { 国: '国語', 社: '社会', 算: '算数', 理: '理科', 生: '生活', 音: '音楽', 図: '図工', 体: '体育', 家: '家庭', 道: '道徳', 特: '特活', 総: '総合', 外: '外国語' };
 
 // ---------- メニュー・画面 ----------
 function onOpen() {
-  SpreadsheetApp.getUi().createMenu('週案').addItem('週のタブを作る', 'showSidebar').addToUi();
+  SpreadsheetApp.getUi().createMenu('週案').addItem(GRADE + 'の週のタブを作る', 'showSidebar').addToUi();
 }
 
 function showSidebar() {
-  var html = HtmlService.createHtmlOutput(SIDEBAR_HTML).setTitle('週のタブを作る');
+  var html = HtmlService.createHtmlOutput(SIDEBAR_HTML).setTitle(GRADE + 'の週のタブを作る');
   SpreadsheetApp.getUi().showSidebar(html);
 }
 
@@ -265,7 +266,11 @@ function fillWeek_(sh, week, grids, colorSrc) {
       if (!grid || hol) return;
       SLOTS.forEach(function (slot) {
         var r = cl.rows[slot];
-        if (r) sh.getRange(r, col).setValue(toShuanWord_(grid[day][slot], week.ab));
+        if (!r) return;
+        var word = toShuanWord_(grid[day][slot], week.ab);
+        sh.getRange(r, col).setValue(word);
+        // 算数（1〜6校時）：教科の下のマスを黄色にして「分割」
+        if (slot !== '朝' && word === '算数' && r + 1 <= cl.lastRow) sh.getRange(r + 1, col).setValue('分割').setBackground(BUNKATSU_YELLOW);
       });
     });
   });
@@ -278,6 +283,7 @@ function fillWeek_(sh, week, grids, colorSrc) {
 
 // ---------- 祝日（カレンダーどおり。外のサービスは使わず、法律の決まりで計算する） ----------
 var HOLIDAY_GRAY = '#cccccc';
+var BUNKATSU_YELLOW = '#ffff00';   // 算数の「分割」のマス（ほかのタブと同じ黄色）
 
 /** グレー（白・黒はのぞく）なら true。'#rrggbb' の赤・緑・青がほぼ同じ */
 function isGray_(hex) {
