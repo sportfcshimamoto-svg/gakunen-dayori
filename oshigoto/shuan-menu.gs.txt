@@ -152,12 +152,12 @@ function shapeOf_(vals) {
   return { classes: classes, abCell: abCell, ab: ab };
 }
 
-/** 日付の行：曜日の見出しの上の行の「14日」、または見出しの下の行の「12/14」「12月14日」（どちらもなければ、上に行があれば上） */
+/** 日付の行：曜日の見出しの上の行の「14日」「1月4日」、または見出しの下の行の「12/14」「12月14日」（どちらもなければ、上に行があれば上） */
 function dateRowOf_(vals, cl) {
   var col = cl.dayCols['月'];
   var above = cl.headRow > 1 ? norm_(at_(vals, col, cl.headRow - 1)) : null;
   var below = norm_(at_(vals, col, cl.headRow + 1));
-  if (above && /^\d{1,2}日?$/.test(above)) return { row: cl.headRow - 1, full: false };
+  if (above && /^(\d{1,2}月)?\d{1,2}日?$/.test(above)) return { row: cl.headRow - 1, full: false };
   if (/^(\d{4}[\/\-年])?\d{1,2}[\/\-月]\d{1,2}日?(\(.\))?$/.test(below) || /^\d{1,2}日$/.test(below)) return { row: cl.headRow + 1, full: true };
   if (cl.headRow > 1) return { row: cl.headRow - 1, full: false };
   return null;
@@ -246,20 +246,18 @@ function fillWeek_(sh, week, grids) {
   return notes;
 }
 
-/** 月〜金の日付を書く。上の行の形なら「14日」、下の行の形なら日付（表示の形はタブのまま） */
+/** 月〜金の日付を書く。月も見えるように「1月4日」の形（下の行で、もう月と日の出る形ならその形のまま） */
 function writeDates_(sh, week, vals, shape) {
   var notes = [];
   Object.keys(shape.classes).forEach(function (cname) {
     var cl = shape.classes[cname];
     var dr = dateRowOf_(vals, cl);
     if (!dr) { notes.push(week.name + '：' + cname + 'の日付の行が見つかりません'); return; }
-    var fmt = dr.full ? sh.getRange(dr.row, cl.dayCols['月']).getNumberFormat() : '';
-    if (!fmt || fmt === 'General' || fmt === '0') fmt = 'm"月"d"日"';
+    var fmt = dr.full ? String(sh.getRange(dr.row, cl.dayCols['月']).getNumberFormat() || '') : '';
+    if (!/m/i.test(fmt) || !/d/i.test(fmt)) fmt = 'm"月"d"日"';
     DAYS.forEach(function (day, i) {
       var d = dateOf_(addDays_(week.monday, i));
-      var cell = sh.getRange(dr.row, cl.dayCols[day]);
-      if (dr.full) cell.setValue(new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())).setNumberFormat(fmt);
-      else cell.setValue(d.getUTCDate() + '日');
+      sh.getRange(dr.row, cl.dayCols[day]).setValue(new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())).setNumberFormat(fmt);
     });
   });
   return notes;
