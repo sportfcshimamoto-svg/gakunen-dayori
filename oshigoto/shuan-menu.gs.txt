@@ -25,7 +25,7 @@ function showSidebar() {
   SpreadsheetApp.getUi().showSidebar(html);
 }
 
-/** 画面を開いたときに渡すもの：覚えている時間割、週案にある週、ChatGPTへのお願い文 */
+/** 画面を開いたときに渡すもの：覚えている時間割、週案にある週 */
 function getState() {
   var props = PropertiesService.getDocumentProperties();
   var weeks = existingWeeks_();
@@ -34,7 +34,6 @@ function getState() {
     text: { '1組': props.getProperty('tt_1組') || '', '2組': props.getProperty('tt_2組') || '' },
     weeks: weeks.map(function (w) { return { name: w.name, monday: w.monday, ab: w.ab }; }),
     from: last ? addDays_(last.monday, 7) : '',
-    prompt: imagePrompt_(),
   };
 }
 
@@ -385,17 +384,6 @@ function toShuanWord_(raw, ab) {
   return s;
 }
 
-function imagePrompt_() {
-  return [
-    'この画像は小学校の時間割表です。次の形の表にして、表だけを返してください。説明はいりません。',
-    '・1行目は「（空）タブ 月 タブ 火 タブ 水 タブ 木 タブ 金」',
-    '・2行目は「朝」：一番上の短い時間（じこく・朝学習・読書など）の教科',
-    '・3〜8行目は「1」〜「6」：1〜6校時の教科',
-    '・区切りはタブ。教科の書き方は画像のとおり（「総/体」「国(書写)」なども、そのまま）。空のマスは空にする',
-    '・休み時間・給食・持ち物などの行は入れない',
-  ].join('\n');
-}
-
 // ---------- 週の予定 ----------
 /** from〜to の月曜日ごとに1週。A週/B週は前の週の反対から交互（abOverride で1週ずつ変えられる） */
 function planWeeks_(from, to, existing, abOverride) {
@@ -436,7 +424,6 @@ var SIDEBAR_HTML = '<!doctype html><html><head><base target="_top"><meta charset
   'input[type=date]{font-size:13px}.dis{color:#999}' +
   '</style></head><body>' +
   '<h3>① 時間割を貼る</h3><p class="help">時間割の「月 火 水 木 金」の見出しから6校時まで（左の「1」「2」…の列もいっしょに）コピーして、組ごとに貼ります。</p>' +
-  '<details><summary>画像しかないとき</summary><p class="help">下のお願い文と時間割の画像をChatGPTに送り、返ってきた表を貼ります。</p><textarea id="prompt" readonly style="height:70px"></textarea></details>' +
   '<div id="classes"></div>' +
   '<h3>② この時間割を使う期間</h3><input type="date" id="from"> から<br><input type="date" id="to"> まで' +
   '<div id="weeks"></div><div id="msg"></div>' +
@@ -455,7 +442,7 @@ var SIDEBAR_HTML = '<!doctype html><html><head><base target="_top"><meta charset
   ' Array.prototype.forEach.call(document.querySelectorAll("[data-mon]"),function(b){b.onclick=function(){var m=b.getAttribute("data-mon");Object.keys(ab).forEach(function(k){if(k>m)delete ab[k]});ab[m]=b.getAttribute("data-ab")==="A"?"B":"A";weeks()}});' +
   ' if($("make"))$("make").onclick=function(){if(busy)return;$("make").disabled=true;$("make").textContent="作っています…";$("msg").innerHTML="";run("makeWeeks",[f,t,ab],function(r){$("msg").innerHTML="<p><b>作りました：</b>"+esc(r.made.join("、"))+"</p>"+r.notes.map(function(x){return"<p class=ng>"+esc(x)+"</p>"}).join("");ab={};weeks()})}' +
   '})}' +
-  'run("getState",[],function(s){$("prompt").value=s.prompt;' +
+  'run("getState",[],function(s){' +
   ' $("classes").innerHTML=CL.map(function(c){return"<b>"+c+"</b><textarea id=\\"ta"+c+"\\" placeholder=\\""+c+"の時間割をここに貼る\\"></textarea><div id=\\"tt"+c+"\\"></div>"}).join("");' +
   ' CL.forEach(function(c){var t=$("ta"+c);t.value=s.text[c];var tm;t.oninput=function(){clearTimeout(tm);tm=setTimeout(function(){check(c)},500)};if(s.text[c])check(c)});' +
   ' if(s.from)$("from").value=s.from;$("from").onchange=function(){ab={};weeks()};$("to").onchange=weeks;' +
