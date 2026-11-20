@@ -443,7 +443,7 @@ function planWeeks_(from, to, existing, abOverride) {
 // ---------- 前の週案（ほかの形）から移す ----------
 // 1年生などの、形のちがう週案のタブを読んで、この週案の形のタブを作る。もとの週案は読むだけで、変えない。
 // 移すもの：日付、朝学、1〜6校時（教科・その下のマス・内容のマス）、宿題。色はグレー（休み）だけ。
-// 教科のマスが黄色なら、下のマスを黄色にして「分割」。「児童・教員・日程」など、この形にない行は移さない。
+// 黄色などほかの色はうつさず、「分割」も入れない（時数表のための移しかえ）。「児童・教員・日程」など、この形にない行は移さない。
 
 function showImport() {
   var html = HtmlService.createHtmlOutput(IMPORT_HTML).setTitle('前の週案から移す');
@@ -572,12 +572,6 @@ function isHomework_(text) {
   return /^[・･]/.test(s) || /\n/.test(s);
 }
 
-function isYellow_(hex) {
-  var m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex || ''));
-  if (!m) return false;
-  return parseInt(m[1], 16) > 200 && parseInt(m[2], 16) > 200 && parseInt(m[3], 16) < 160;
-}
-
 /** 新しいタブを置く場所：前の週のタブのすぐ後（月曜の順） */
 function positionFor_(ss, existing, monday) {
   var after = existing.filter(function (e) { return e.monday > monday; })[0];
@@ -637,11 +631,7 @@ function copyFromSource_(ssh, sh, week) {
           return;
         }
         var tspan = spanOf_(tb, tr, tv.length);
-        for (var j = 0; j < sspan; j++) put(tr + Math.min(j, tspan - 1), S(scol, sr + j), B(scol, sr + j));   // 行が足りなければ最後の行にまとめる
-        if (isYellow_(B(scol, sr)) && tspan >= 2) {   // 教科のマスが黄色：下のマスを黄色にして「分割」
-          if (!vals[tr + 1 - top][0]) vals[tr + 1 - top][0] = '分割';
-          bg[tr + 1 - top][0] = BUNKATSU_YELLOW;
-        }
+        for (var j = 0; j < sspan; j++) put(tr + Math.min(j, tspan - 1), S(scol, sr + j), B(scol, sr + j));   // 行が足りなければ最後の行にまとめる（色はグレーだけ）
       });
       if (sc.rows['宿題']) homework = S(scol, sc.rows['宿題']);
       if (homework) {
@@ -712,7 +702,7 @@ var IMPORT_HTML = '<!doctype html><html><head><base target="_top"><meta charset=
   '<p class="help">前の形の週案（1年生の週案など）の週のタブを、この週案の形に移します。前の週案は読むだけで、変えません。</p>' +
   '<h3>① 前の週案のURLを貼る</h3><input type="text" id="url" placeholder="https://docs.google.com/spreadsheets/d/…"><br><button id="load">読み込む</button>' +
   '<div id="list"></div><div id="msg"></div>' +
-  '<p class="help">移すもの：日付・朝学・1〜6校時（教科と、その下のマス）・宿題。休みのグレーと、黄色の教科（→下のマスを黄色にして「分割」）。<br>「児童・教員・日程」の行など、この週案の形にない行は移しません（前の週案に残っています）。</p>' +
+  '<p class="help">移すもの：日付・朝学・1〜6校時（教科と、その下のマス）・宿題。色は休みのグレーだけ（黄色などの色はうつさず、「分割」も入れません）。<br>「児童・教員・日程」の行など、この週案の形にない行は移しません（前の週案に残っています）。</p>' +
   '<script>' +
   'var W=[],busy=false;function $(i){return document.getElementById(i)}' +
   'function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;")}' +
