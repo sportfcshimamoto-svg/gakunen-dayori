@@ -541,7 +541,7 @@ function panelPage2() {
         <button class="small" data-ph="toggle" data-i="${i}" data-id="${id}" title="${isOff ? '学年だよりに載せる' : '学年だよりに載せない（写真は残す）'}">${isOff ? '使う' : '除外'}</button>
         <button class="small" data-ph="del" data-i="${i}" data-id="${id}" title="写真を消す">×</button></div></div>`;
     });
-    h += `<label class="btn add-photo">＋ 写真を入れる<input type="file" accept="image/*" multiple data-ph-add="${i}" hidden><small>ここに写真をドラッグしても入れられます</small></label></div>
+    h += `<label class="btn add-photo">＋ 写真を入れる<input type="file" accept="image/*,.heic,.heif" multiple data-ph-add="${i}" hidden><small>ここに写真をドラッグしても入れられます</small></label></div>
       ${missing ? `<div class="notice warn">このブラウザに保存されていない写真が${missing}枚分あります（別のパソコンで入れた写真など）。もう一度入れ直してください。</div>` : ''}
       ${used ? `<div class="photo-opts"><label>1行の枚数 <select data-sc="perRow" data-i="${i}">${[0, 1, 2, 3, 4, 5, 6].map((n) => `<option value="${n}" ${(s.perRow || 0) === n ? 'selected' : ''}>${n ? n + '枚' : '自動'}</option>`).join('')}</select></label>
       <label>写真の大きさ <select data-sc="photoSize" data-i="${i}">${[0.6, 0.7, 0.8, 0.9, 1, 1.15, 1.3, 1.5].map((n) => `<option value="${n}" ${(s.photoSize || 1) === n ? 'selected' : ''}>${n === 1 ? 'ふつう' : Math.round(n * 100) + '%'}</option>`).join('')}</select></label>
