@@ -234,6 +234,7 @@ function logoField(grade) {
   return `<div class="field" style="align-items:start"><label>ロゴ（${grade}年生）</label><div>
     <div class="ill-set"><div class="ill-box logo-box" data-ill-drop="logo">${logo ? `<img src="${urlOf(logo)}" alt="${grade}年生のロゴ">` : '<span>ロゴなし</span>'}</div>
     <div class="ill-btns"><label class="btn small">画像を選ぶ<input type="file" accept="image/png,image/jpeg" data-ill-add="logo" hidden></label>
+    ${pasteBox('logo', 0, 'ロゴ')}
     ${custom ? `<button class="small" data-ill-del="logo">${DEFAULT_LOGO[grade] ? '最初のロゴに戻す' : 'ロゴを外す'}</button>` : ''}</div></div>
     ${logo ? '' : '<div class="notice warn">この学年のロゴは、まだ設定されていません（ロゴなしで作ります）。</div>'}
     <p class="help" style="margin:4px 0 0">ロゴは学年ごとに、このブラウザに保存されます（毎月そのまま使えます）。1ページ目の左上の枠（横9.7cm×縦2.8cm）に、縦横の比を保って収めます。</p></div></div>`;
@@ -542,6 +543,7 @@ function panelPage2() {
         <button class="small" data-ph="del" data-i="${i}" data-id="${id}" title="写真を消す">×</button></div></div>`;
     });
     h += `<label class="btn add-photo">＋ 写真を入れる<input type="file" accept="image/*,.heic,.heif" multiple data-ph-add="${i}" hidden><small>ここに写真をドラッグしても入れられます</small></label></div>
+      ${pasteBox('photo', i, '写真')}
       ${missing ? `<div class="notice warn">このブラウザに保存されていない写真が${missing}枚分あります（別のパソコンで入れた写真など）。もう一度入れ直してください。</div>` : ''}
       ${used ? `<div class="photo-opts"><label>1行の枚数 <select data-sc="perRow" data-i="${i}">${[0, 1, 2, 3, 4, 5, 6].map((n) => `<option value="${n}" ${(s.perRow || 0) === n ? 'selected' : ''}>${n ? n + '枚' : '自動'}</option>`).join('')}</select></label>
       <label>写真の大きさ <select data-sc="photoSize" data-i="${i}">${[0.6, 0.7, 0.8, 0.9, 1, 1.15, 1.3, 1.5].map((n) => `<option value="${n}" ${(s.photoSize || 1) === n ? 'selected' : ''}>${n === 1 ? 'ふつう' : Math.round(n * 100) + '%'}</option>`).join('')}</select></label>
@@ -572,6 +574,7 @@ function seasonPoolHtml(m, current) {
       <button class="small ill-x" data-ill-del="season" data-id="${id}" data-m="${m}" title="この絵を消す">×</button></div>`;
   });
   h += `<label class="btn add-photo ill-add">＋ 絵を入れる<input type="file" accept="image/png,image/jpeg" multiple data-ill-add="season" data-m="${m}" hidden>${current ? '<small>何枚でも入れられます。ここにドラッグしても入ります</small>' : ''}</label></div>`;
+  h += pasteBox('season', m, '絵');
   if (current) {
     // アプリに最初から入っている絵（消せない。使わないときは、置き場所の選択で「なし」や別の絵にする）
     const builtins = [seasonIllustOf(m), ...smallIllustsOf(m)];
@@ -775,6 +778,49 @@ async function importPasted(html, text, hasImage) {
   if (curriculum[g] && curriculum[g] !== before) showPasteStatus(`読み込みました：${curriculum[g].subjects.length}教科（${curriculum[g].subjects.map((x) => x.label).join('・')}）`, 'ok');
   else showPasteStatus('表はありましたが、カリキュラムとして読み込めませんでした。上か下に出ている案内を見てください（「４月、５月…」の見出しの行もいっしょに選んでいるか、確かめてください）。', 'warn');
 }
+// ---------- 写真・イラスト・ロゴをコピーして貼り付けで入れる ----------
+// 学校のパソコンでは、JPGのファイル選びが止められることがあるので、ファイルを選ばずに入れる道も用意する。
+// 貼り付けた画像も、ファイル選びと同じ処理で、このブラウザの中だけで縮めて保存する（外には送らない）
+// kind：'photo'（記事の写真。n＝記事の番号）／'season'（季節のイラスト。n＝月）／'logo'（ロゴ）
+function pasteBox(kind, n, what) {
+  return `<div class="ph-paste"><textarea rows="1" data-paste-kind="${kind}" data-n="${n}" placeholder="ここに Ctrl＋V で${what}を貼り付け"></textarea>
+    <button class="small" data-clip-kind="${kind}" data-n="${n}">コピーした${what}を入れる（ボタンで）</button></div>`;
+}
+const pastedName = (type, k) => `貼り付けた画像${k + 1}.${/png/.test(type) ? 'png' : /jpe?g/.test(type) ? 'jpg' : 'img'}`;
+async function addPastedBlobs(kind, n, blobs) {
+  if (!blobs.length) { toast('画像が入っていませんでした。写真や絵を開いて Ctrl＋C でコピーしてから、もう一度ためしてください。'); return; }
+  const files = blobs.map((b, k) => (b instanceof File && b.name ? b : new File([b], pastedName(b.type, k), { type: b.type })));
+  if (kind === 'photo') await addPhotos(n, files);
+  else await addIllustFiles(kind, n, files);
+}
+$('#panel').addEventListener('paste', async (e) => {
+  const ta = e.target.closest && e.target.closest('[data-paste-kind]'); if (!ta) return;
+  e.preventDefault();
+  const cd = e.clipboardData;
+  if (!cd) { toast('貼り付けたものを読めませんでした。となりの「（ボタンで）」を押してみてください。'); return; }
+  const blobs = [...(cd.files || [])].filter((f) => /^image\//.test(f.type) || /\.(jpe?g|png)$/i.test(f.name));
+  if (!blobs.length) for (const it of cd.items || []) if (it.kind === 'file' && /^image\//.test(it.type)) { const f = it.getAsFile(); if (f) blobs.push(f); }
+  await addPastedBlobs(ta.dataset.pasteKind, Number(ta.dataset.n), blobs);
+});
+$('#panel').addEventListener('input', (e) => {
+  if (!e.target.dataset || !e.target.dataset.pasteKind || !e.target.value) return;
+  e.target.value = '';
+  toast('文字だけが入り、画像が入っていませんでした。となりの「（ボタンで）」を押してみてください。');
+});
+async function readClipboardImages(kind, n) {
+  if (!navigator.clipboard || !navigator.clipboard.read) { toast('このブラウザでは、ボタンでの読み込みが使えません。欄をクリックして Ctrl＋V で貼り付けてください。'); return; }
+  try {
+    const blobs = [];
+    for (const item of await navigator.clipboard.read()) {
+      const type = item.types.find((t) => t.startsWith('image/'));
+      if (type) blobs.push(await item.getType(type));
+    }
+    await addPastedBlobs(kind, n, blobs);
+  } catch (err) {
+    toast('クリップボードを読めませんでした。ブラウザに「クリップボードの読み取り」を聞かれたら「許可」を押してください。学校のパソコンの設定で止められている場合は、読み込めません。（' + (err && err.name || err) + '）');
+  }
+}
+
 $('#panel').addEventListener('paste', async (e) => {
   if (e.target.id !== 'f-curpaste') return;
   e.preventDefault();
@@ -811,6 +857,7 @@ $('#panel').addEventListener('click', async (e) => {
   if (e.target.id === 'btn-sheet') { await loadSheet($('#f-sheet').value); return; }
   if (e.target.id === 'btn-curclip') { await readClipboardTable(); return; }
   const t = e.target.closest('button'); if (!t) return;
+  if (t.dataset.clipKind) { await readClipboardImages(t.dataset.clipKind, Number(t.dataset.n)); return; }
   const d = state.data; const i = Number(t.dataset.i);
   if (t.id === 'btn-reextract') { await runExtract(); return; }
   if (t.dataset.illDel) { await removeIllustOf(t.dataset.illDel, Number(t.dataset.m), t.dataset.id); return; }
