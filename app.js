@@ -232,8 +232,8 @@ function logoField(grade) {
   const logo = logoOf(grade);
   const custom = illustMeta.has(logoKey(grade));
   return `<div class="field" style="align-items:start"><label>ロゴ（${grade}年生）</label><div>
-    <div class="ill-set"><div class="ill-box logo-box" data-ill-drop="logo">${logo ? `<img src="${urlOf(logo)}" alt="${grade}年生のロゴ">` : '<span>ロゴなし</span>'}</div>
-    <div class="ill-btns"><label class="btn small">画像を選ぶ<input type="file" accept="image/png,image/jpeg" data-ill-add="logo" hidden></label>
+    <div class="ill-set"><div class="ill-box logo-box">${logo ? `<img src="${urlOf(logo)}" alt="${grade}年生のロゴ">` : '<span>ロゴなし</span>'}</div>
+    <div class="ill-btns">
     ${pasteBox('logo', 0, 'ロゴ')}
     ${custom ? `<button class="small" data-ill-del="logo">${DEFAULT_LOGO[grade] ? '最初のロゴに戻す' : 'ロゴを外す'}</button>` : ''}</div></div>
     ${logo ? '' : '<div class="notice warn">この学年のロゴは、まだ設定されていません（ロゴなしで作ります）。</div>'}
@@ -518,7 +518,7 @@ async function aiClick(t, btn) {
 function panelPage2() {
   newsletterData();   // 季節のイラストの置き場所（lastPlacement）を最新にする
   let h =`<h2>2ページ目の記事</h2><p class="help">改行すると新しい段落になります。下線を引きたいところは __このように__ 下線2本ずつではさみます。</p>
-  <p class="help">写真は、このパソコンのブラウザの中だけに保存します（インターネットには送りません）。Wordでは白黒になります。並べ替えは、写真をドラッグするか ← → で行えます。<b>毎月1日をすぎて最初にアプリを開いたとき、前の月までに入れた写真は自動で消えます</b>（ロゴ・季節のイラストは消えません）。</p>
+  <p class="help">写真の入れ方：写真を開いて Ctrl＋C でコピーし、記事の下の「ここに Ctrl＋V で写真を貼り付け」の欄をクリックして Ctrl＋V（季節のイラスト・ロゴも同じ）。写真は、このパソコンのブラウザの中だけに保存します（インターネットには送りません）。Wordでは白黒になります。並べ替えは、写真をドラッグするか ← → で行えます。<b>毎月1日をすぎて最初にアプリを開いたとき、前の月までに入れた写真は自動で消えます</b>（ロゴ・季節のイラストは消えません）。</p>
   <label class="help" style="display:block"><input type="checkbox" id="f-autofill" ${state.data.autoFill === false ? '' : 'checked'}> 2ページ目の下が大きく空いたときは、季節のイラストを入れる</label>
   ${seasonCard()}`;
   state.data.sections.forEach((s, i) => {
@@ -542,7 +542,7 @@ function panelPage2() {
         <button class="small" data-ph="toggle" data-i="${i}" data-id="${id}" title="${isOff ? '学年だよりに載せる' : '学年だよりに載せない（写真は残す）'}">${isOff ? '使う' : '除外'}</button>
         <button class="small" data-ph="del" data-i="${i}" data-id="${id}" title="写真を消す">×</button></div></div>`;
     });
-    h += `<label class="btn add-photo">＋ 写真を入れる<input type="file" accept="image/*,.heic,.heif" multiple data-ph-add="${i}" hidden><small>ここに写真をドラッグしても入れられます</small></label></div>
+    h += `</div>
       ${pasteBox('photo', i, '写真')}
       ${missing ? `<div class="notice warn">このブラウザに保存されていない写真が${missing}枚分あります（別のパソコンで入れた写真など）。もう一度入れ直してください。</div>` : ''}
       ${used ? `<div class="photo-opts"><label>1行の枚数 <select data-sc="perRow" data-i="${i}">${[0, 1, 2, 3, 4, 5, 6].map((n) => `<option value="${n}" ${(s.perRow || 0) === n ? 'selected' : ''}>${n ? n + '枚' : '自動'}</option>`).join('')}</select></label>
@@ -566,14 +566,14 @@ function whereIs(id) {
 }
 function seasonPoolHtml(m, current) {
   const ids = seasonPool(m);
-  let h = `<div class="ill-pool ${current ? '' : 'mini'}" data-ill-drop="season" data-m="${m}">`;
+  let h = `<div class="ill-pool ${current ? '' : 'mini'}">`;
   ids.forEach((id, k) => {
     const meta = illustMeta.get(id);
     h += `<div class="ill-thumb"><span class="thumb-num">${k + 1}</span><img class="gray" src="${meta.url}" alt="${esc(meta.name)}" title="${esc(meta.name)}">
       ${current ? `<span class="ill-where">${esc(whereIs(id))}</span>` : ''}
       <button class="small ill-x" data-ill-del="season" data-id="${id}" data-m="${m}" title="この絵を消す">×</button></div>`;
   });
-  h += `<label class="btn add-photo ill-add">＋ 絵を入れる<input type="file" accept="image/png,image/jpeg" multiple data-ill-add="season" data-m="${m}" hidden>${current ? '<small>何枚でも入れられます。ここにドラッグしても入ります</small>' : ''}</label></div>`;
+  h += `${ids.length ? '' : '<span class="help" style="margin:0">まだ入れていません</span>'}</div>`;
   h += pasteBox('season', m, '絵');
   if (current) {
     // アプリに最初から入っている絵（消せない。使わないときは、置き場所の選択で「なし」や別の絵にする）
@@ -667,8 +667,6 @@ $('#panel').addEventListener('change', async (e) => {
   if (t.id === 'f-autofill') { d.autoFill = t.checked; changed(); return; }
   if (t.dataset.sc === 'perRow') { d.sections[i].perRow = Number(t.value) || undefined; changed(); }
   if (t.dataset.sc === 'photoSize') { d.sections[i].photoSize = Number(t.value); changed(); }
-  if (t.dataset.phAdd !== undefined && t.files.length) { const files = [...t.files]; t.value = ''; await addPhotos(Number(t.dataset.phAdd), files); }
-  if (t.dataset.illAdd && t.files.length) { const files = [...t.files]; t.value = ''; await addIllustFiles(t.dataset.illAdd, Number(t.dataset.m), files); }
   if (t.id === 'f-boxchoice') { if (t.value) d.boxChoice = t.value; else delete d.boxChoice; changed(); renderPanel(); return; }
   if (t.id === 'f-builtinsmall') { d.builtinSmall = t.checked; changed(); renderPanel(); return; }
   if (t.id === 'f-fillchoice') { if (t.value) d.fillChoice = t.value; else delete d.fillChoice; changed(); renderPanel(); }
@@ -714,7 +712,7 @@ async function removeIllustOf(kind, month, id) {
   changed(); renderPanel();
 }
 
-// 写真のドラッグ（並べ替え・ほかの記事への移動・パソコンからの追加）
+// 写真のドラッグ（並べ替え・ほかの記事への移動）。パソコンからのファイルのドラッグでは入れない（学校のパソコンではJPGが止められるので、コピーして貼り付けにそろえた）
 let dragging = null;
 $('#panel').addEventListener('dragstart', (e) => {
   const th = e.target.closest && e.target.closest('.thumb'); if (!th) return;
@@ -723,22 +721,17 @@ $('#panel').addEventListener('dragstart', (e) => {
 });
 $('#panel').addEventListener('dragend', () => { dragging = null; document.querySelectorAll('.drop-on').forEach((x) => x.classList.remove('drop-on')); });
 $('#panel').addEventListener('dragover', (e) => {
-  const area = e.target.closest && e.target.closest(dragging ? '[data-drop]' : '[data-drop], [data-ill-drop]'); if (!area) return;
+  if (!dragging) { e.preventDefault(); e.dataTransfer.dropEffect = 'none'; return; }   // ファイルを落としても、ブラウザがファイルを開いてしまわないように
+  const area = e.target.closest && e.target.closest('[data-drop]'); if (!area) return;
   e.preventDefault();
   document.querySelectorAll('.drop-on').forEach((x) => { if (x !== area) x.classList.remove('drop-on'); });
   area.classList.add('drop-on');
 });
 $('#panel').addEventListener('drop', async (e) => {
-  const ill = !dragging && e.target.closest && e.target.closest('[data-ill-drop]');
-  if (ill) {
-    e.preventDefault(); ill.classList.remove('drop-on');
-    if (e.dataTransfer.files.length) await addIllustFiles(ill.dataset.illDrop, Number(ill.dataset.m), [...e.dataTransfer.files]);
-    return;
-  }
+  if (!dragging) { e.preventDefault(); return; }
   const area = e.target.closest && e.target.closest('[data-drop]'); if (!area) return;
   e.preventDefault(); area.classList.remove('drop-on');
   const si = Number(area.dataset.drop);
-  if (!dragging) { if (e.dataTransfer.files.length) await addPhotos(si, e.dataTransfer.files); return; }
   const from = state.data.sections[dragging.sec]; const to = state.data.sections[si];
   const target = e.target.closest('.thumb');
   from.photos = from.photos.filter((x) => x !== dragging.id);
