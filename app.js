@@ -115,7 +115,7 @@ function illLabel(m, id) {
 const photoMeta = new Map();   // 写真ID → { width, height, url, name }
 function addMeta(rec) {
   const old = photoMeta.get(rec.id); if (old) URL.revokeObjectURL(old.url);
-  photoMeta.set(rec.id, { width: rec.width, height: rec.height, name: rec.name, url: URL.createObjectURL(rec.blob) });
+  photoMeta.set(rec.id, { width: rec.width, height: rec.height, name: rec.name, src: rec.src, url: URL.createObjectURL(rec.blob) });
 }
 async function loadPhotoMeta() {
   try { for (const rec of await allPhotos()) (rec.kind ? addIllustMeta : addMeta)(rec); } catch { /* 写真なしで続ける */ }
@@ -513,42 +513,91 @@ async function aiClick(t, btn) {
   }
 }
 
-// ---------- （試し）パソコンのフォルダから写真を読めるか ----------
-// 学校のパソコンで、フォルダを選んで中の写真を読めるかだけを確かめる。写真は入れない・保存しない・外に送らない
-let folderTest = '';
-function folderTestCard() {
-  return `<div class="card"><div class="card-head"><b>（試し）フォルダの写真を読めるか確かめる</b></div>
-    <p class="help" style="margin:4px 0">「学年だより」のフォルダ（中に「12月」などのフォルダ）を選ぶと、見つかった写真の枚数を出します。写真は入れません。</p>
-    <div class="adder" style="margin:6px 0 0"><button id="btn-dirtest">フォルダを選んで確かめる</button></div>
-    <div id="dir-test-status" class="notice" style="margin-top:6px;white-space:pre-wrap" ${folderTest ? '' : 'hidden'}>${esc(folderTest)}</div></div>`;
+// ---------- パソコンのフォルダから写真を読み込む ----------
+// 「学年だより」フォルダ ＞「12月」フォルダ ＞ 記事の見出しと同じ名前のフォルダ ＞ 写真、の形で置いておくと、
+// ボタン1つで、その月の写真を見出しが同じ記事に入れる（見出しが同じ記事がなければ、その見出しで記事を作る）。
+// フォルダは最初の1回だけ選び、このブラウザに覚える（Edge・Chrome の showDirectoryPicker）。写真は外に送らない。
+// 一度読み込んだ写真（フォルダ名・ファイル名・大きさ・更新日時が同じもの）は、同じ記事に二度入れない。
+const FOLDER_DB = 'gakunen-dayori-folder';
+function folderDb() {
+  return new Promise((res, rej) => { const q = indexedDB.open(FOLDER_DB, 1); q.onupgradeneeded = () => q.result.createObjectStore('h'); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
 }
-function showFolderTest(msg) { folderTest = msg; const el = $('#dir-test-status'); if (el) { el.textContent = msg; el.hidden = false; } }
-async function testFolder() {
-  if (!window.showDirectoryPicker) { showFolderTest('このブラウザでは、フォルダを選ぶ機能が使えません（Edge か Chrome で開いてください）。'); return; }
-  let dir;
-  try { dir = await window.showDirectoryPicker({ mode: 'read' }); }
-  catch (e) { showFolderTest(e && e.name === 'AbortError' ? 'フォルダを選ばずに閉じました（または、学校のパソコンの設定で止められました）。' : `フォルダを選べませんでした（${e && e.name || e}）。`); return; }
-  const isImg = (n) => /\.(jpe?g|png|hei[cf])$/i.test(n);
-  const lines = [`選んだフォルダ：「${dir.name}」`];
-  let first = null; let total = 0;
+async function folderGet() { try { const db = await folderDb(); return await new Promise((res) => { const g = db.transaction('h').objectStore('h').get('root'); g.onsuccess = () => res(g.result || null); g.onerror = () => res(null); }); } catch { return null; } }
+async function folderPut(h) { try { const db = await folderDb(); await new Promise((res) => { const t = db.transaction('h', 'readwrite'); t.objectStore('h').put(h, 'root'); t.oncomplete = res; t.onerror = res; }); } catch { /* 覚えられなくても、今回は使える */ } }
+let folderHandle = null;
+folderGet().then((h) => { if (h) { folderHandle = h; renderPanel(); } });
+
+const normName = (x) => String(x || '').normalize('NFKC').replace(/\s+/g, '');
+const monthOfFolder = (name) => { const r = /^0?(\d{1,2})月?/.exec(normName(name)); return r ? Number(r[1]) : 0; };
+const isPhotoName = (n) => /\.(jpe?g|png|hei[cf])$/i.test(n);
+
+function folderCard() {
+  const m = state.data.month;
+  return `<div class="card"><div class="card-head"><b>📁 フォルダから写真を読み込む</b></div>
+    <div class="adder" style="margin:6px 0 0">${folderHandle
+      ? `<button id="btn-folder-load">${m}月の写真を読み込む</button><button id="btn-folder-pick" class="small">フォルダを選び直す</button><span class="help" style="margin:0">読み込むフォルダ：「${esc(folderHandle.name)}」</span>`
+      : '<button id="btn-folder-pick">フォルダを選ぶ（最初の1回）</button>'}</div>
+    <p class="help" style="margin:6px 0 0">デスクトップなどに「学年だより」フォルダを作り、その中に「${m}月」フォルダ、さらにその中に<b>記事の見出しと同じ名前のフォルダ</b>（例：「音楽会」）を作って写真を入れます。ボタンを押すと、見出しが同じ記事に写真が入ります（見出しが同じ記事がなければ、その見出しで記事を作ります）。一度読み込んだ写真は、二度は入りません。</p></div>`;
+}
+async function pickFolder() {
+  if (!window.showDirectoryPicker) { toast('このブラウザでは、フォルダを選ぶ機能が使えません（Edge か Chrome で開いてください）。'); return; }
+  let h;
+  try { h = await window.showDirectoryPicker({ id: 'gakunen-dayori', mode: 'read' }); }
+  catch (e) { if (!(e && e.name === 'AbortError')) toast(`フォルダを選べませんでした（${e && e.name || e}）`); return; }
+  folderHandle = h; await folderPut(h); renderPanel();
+  await loadFromFolder();
+}
+async function loadFromFolder() {
+  const root = folderHandle; if (!root) return;
+  const d = state.data; const m = d.month;
   try {
-    const count = async (d, label) => {
+    if ((await root.queryPermission({ mode: 'read' })) !== 'granted' && (await root.requestPermission({ mode: 'read' })) !== 'granted') {
+      toast('フォルダを見る許可がもらえませんでした。もう一度押して「許可」を選んでください。'); return;
+    }
+  } catch { /* 許可を聞けないブラウザでは、そのまま読んでみる */ }
+  try {
+    // 選んだフォルダが「12月」フォルダそのものなら、それを使う。ちがえば、その中の「12月」フォルダを探す
+    let monthDir = monthOfFolder(root.name) === m ? root : null;
+    if (!monthDir) for await (const h of root.values()) if (h.kind === 'directory' && monthOfFolder(h.name) === m) { monthDir = h; break; }
+    if (!monthDir) { toast(`「${root.name}」フォルダの中に「${m}月」のフォルダが見つかりませんでした。`); return; }
+    const subs = []; let loose = 0;
+    for await (const h of monthDir.values()) {
+      if (h.kind === 'directory') subs.push(h); else if (isPhotoName(h.name)) loose++;
+    }
+    subs.sort((a, b) => a.name.localeCompare(b.name, 'ja', { numeric: true }));
+    toast('写真を読み込んでいます…');
+    const done = []; let made = 0; let skipped = 0;
+    for (const sub of subs) {
+      const files = [];
+      for await (const h of sub.values()) if (h.kind === 'file' && isPhotoName(h.name)) files.push(h);
+      if (!files.length) continue;
+      files.sort((a, b) => a.name.localeCompare(b.name, 'ja', { numeric: true }));
+      let si = d.sections.findIndex((x) => normName(x.title) && normName(x.title) === normName(sub.name));
+      if (si < 0) { d.sections.push({ title: sub.name, fontSize: 11, paragraphs: [] }); si = d.sections.length - 1; made++; }
+      const sec = d.sections[si]; sec.photos = sec.photos || [];
+      const have = new Set(sec.photos.map((id) => photoMeta.get(id) && photoMeta.get(id).src).filter(Boolean));
       let n = 0;
-      for await (const h of d.values()) if (h.kind === 'file' && isImg(h.name)) { n++; if (!first) first = h; }
-      if (n) lines.push(`　${label}：写真 ${n}枚`); total += n;
-    };
-    await count(dir, '（このフォルダの中）');
-    for await (const h of dir.values()) if (h.kind === 'directory') await count(h, `「${h.name}」フォルダ`);
-  } catch (e) { lines.push(`中を見られませんでした（${e && e.name || e}）。`); showFolderTest(lines.join('\n')); return; }
-  if (!total) { lines.push('写真（JPG・PNG・HEIC）は見つかりませんでした。'); showFolderTest(lines.join('\n')); return; }
-  try {
-    const f = await first.getFile(); const buf = await f.arrayBuffer();
-    let ok = '';
-    if (!/hei[cf]$/i.test(f.name)) { const bmp = await createImageBitmap(f); ok = `（${bmp.width}×${bmp.height}）`; bmp.close && bmp.close(); }
-    lines.push(`1枚目の写真「${f.name}」も読めました${ok}。${Math.round(buf.byteLength / 1024)}KB`);
-    lines.push('→ この方法なら、フォルダから写真を入れる機能を作れそうです。');
-  } catch (e) { lines.push(`写真の中身は読めませんでした（${e && e.name || e}）。学校のパソコンの設定で止められているかもしれません。`); }
-  showFolderTest(lines.join('\n'));
+      for (const fh of files) {
+        try {
+          const f = await fh.getFile();
+          const src = `${m}/${sub.name}/${f.name}/${f.size}/${f.lastModified}`;
+          if (have.has(src)) { skipped++; continue; }
+          const rec = await preparePhoto(f); rec.src = src;
+          await putPhoto(rec); addMeta(rec); sec.photos.push(rec.id); have.add(src); n++;
+        } catch (e) { toast(e.message || String(e)); }
+      }
+      if (n) done.push(`「${sub.name}」${n}枚`);
+    }
+    changed(); renderPanel();
+    const msg = [];
+    msg.push(done.length ? `写真を入れました：${done.join('、')}` : '新しく入れる写真はありませんでした');
+    if (made) msg.push(`見出しが同じ記事がなかったので、記事を${made}つ作りました`);
+    if (skipped) msg.push(`前に読み込んだ写真${skipped}枚は入れていません`);
+    if (loose) msg.push(`「${monthDir.name}」フォルダに直接ある写真${loose}枚は、どの記事か分からないので入れていません（記事の名前のフォルダに入れてください）`);
+    toast(msg.join('。') + '。');
+  } catch (e) {
+    toast(`フォルダを読めませんでした（${e && e.name || e}）。学校のパソコンの設定で止められているかもしれません。`);
+  }
 }
 
 // ---------- ⑤ 2ページ目 ----------
@@ -557,7 +606,7 @@ function panelPage2() {
   let h =`<h2>2ページ目の記事</h2><p class="help">改行すると新しい段落になります。下線を引きたいところは __このように__ 下線2本ずつではさみます。</p>
   <p class="help">写真の入れ方：写真を開いて Ctrl＋C でコピーし、記事の下の「ここに Ctrl＋V で写真を貼り付け」の欄をクリックして Ctrl＋V（季節のイラスト・ロゴも同じ）。写真は、このパソコンのブラウザの中だけに保存します（インターネットには送りません）。Wordでは白黒になります。並べ替えは、写真をドラッグするか ← → で行えます。写真をタッチ（クリック）すると消せます（季節のイラストも同じ）。<b>毎月1日をすぎて最初にアプリを開いたとき、前の月までに入れた写真は自動で消えます</b>（ロゴ・季節のイラストは消えません）。</p>
   <label class="help" style="display:block"><input type="checkbox" id="f-autofill" ${state.data.autoFill === false ? '' : 'checked'}> 2ページ目の下が大きく空いたときは、季節のイラストを入れる</label>
-  ${folderTestCard()}
+  ${folderCard()}
   ${seasonCard()}`;
   state.data.sections.forEach((s, i) => {
     const off = s.photoOff || [];
@@ -894,7 +943,8 @@ async function readClipboardTable() {
 $('#panel').addEventListener('click', async (e) => {
   if (e.target.id === 'btn-sheet') { await loadSheet($('#f-sheet').value); return; }
   if (e.target.id === 'btn-curclip') { await readClipboardTable(); return; }
-  if (e.target.id === 'btn-dirtest') { await testFolder(); return; }
+  if (e.target.id === 'btn-folder-pick') { await pickFolder(); return; }
+  if (e.target.id === 'btn-folder-load') { await loadFromFolder(); return; }
   const t = e.target.closest('button'); if (!t) return;
   if (t.dataset.clipKind) { await readClipboardImages(t.dataset.clipKind, Number(t.dataset.n)); return; }
   const d = state.data; const i = Number(t.dataset.i);
