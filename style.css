@@ -146,3 +146,7 @@ details summary { cursor: pointer; margin-top: 8px; font-size: 14px; color: var(
 .ph-paste { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
 .ph-paste textarea { flex: 1; min-width: 14em; min-height: 0; resize: none; font-size: 12px; }
 
+
+/* 写真・イラストはタッチ（クリック）で消せる */
+.thumb img, .ill-thumb img { cursor: pointer; }
+.thumb:hover img, .ill-thumb:hover img { outline: 2px solid #d33; outline-offset: -2px; }

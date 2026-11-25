@@ -372,9 +372,8 @@ function panelCurriculum() {
     <div class="adder" style="margin:6px 0 0"><button id="btn-curclip">コピーした表を読み込む（ボタンで）</button><span class="help" style="margin:0">Ctrl＋V でうまくいかないときは、こちらを押してください</span></div>
     <div id="cur-paste-status" class="notice ${pasteStatus.kind === 'ok' ? '' : 'warn'}" style="margin-top:6px" ${pasteStatus.msg ? '' : 'hidden'}>${esc(pasteStatus.msg)}</div>
     <p class="help" style="margin:6px 0 0">カリキュラム（WordやGoogleドキュメント）を開き、表の全体をなぞって選んで Ctrl＋C でコピーし、上の欄に貼り付けます。2ページにわたる表も、まとめて選んでください。</p></div>
-  <div class="adder"><button id="btn-cur-sample">サンプルで試す</button>
-  ${c ? '<button id="btn-cur-del" class="small">このカリキュラムを消す</button>' : ''}</div>`;
-  if (!c) return h + `<p class="help">まだ読み込んでいません。本物のカリキュラムが届くまでは「サンプルで試す」で動きを確かめられます（中身は「【サンプル】」と書いた仮のデータです）。</p>`;
+  ${c ? '<div class="adder"><button id="btn-cur-del" class="small">このカリキュラムを消す</button></div>' : ''}`;
+  if (!c) return h + '<p class="help">まだ読み込んでいません。</p>';
   h += `<p class="help" style="margin:4px 0">読み込んだもの：${esc(c.name)}（${esc(c.importedAt)}）</p>`;
   if (c.sample) h += '<div class="notice warn"><b>これはサンプル（仮のデータ）です。</b>本物のカリキュラムではありません。本物が届いたら、読み込み直してください。</div>';
   for (const w of c.warnings || []) h += `<div class="notice warn">⚠ ${esc(w)}</div>`;
@@ -518,7 +517,7 @@ async function aiClick(t, btn) {
 function panelPage2() {
   newsletterData();   // 季節のイラストの置き場所（lastPlacement）を最新にする
   let h =`<h2>2ページ目の記事</h2><p class="help">改行すると新しい段落になります。下線を引きたいところは __このように__ 下線2本ずつではさみます。</p>
-  <p class="help">写真の入れ方：写真を開いて Ctrl＋C でコピーし、記事の下の「ここに Ctrl＋V で写真を貼り付け」の欄をクリックして Ctrl＋V（季節のイラスト・ロゴも同じ）。写真は、このパソコンのブラウザの中だけに保存します（インターネットには送りません）。Wordでは白黒になります。並べ替えは、写真をドラッグするか ← → で行えます。<b>毎月1日をすぎて最初にアプリを開いたとき、前の月までに入れた写真は自動で消えます</b>（ロゴ・季節のイラストは消えません）。</p>
+  <p class="help">写真の入れ方：写真を開いて Ctrl＋C でコピーし、記事の下の「ここに Ctrl＋V で写真を貼り付け」の欄をクリックして Ctrl＋V（季節のイラスト・ロゴも同じ）。写真は、このパソコンのブラウザの中だけに保存します（インターネットには送りません）。Wordでは白黒になります。並べ替えは、写真をドラッグするか ← → で行えます。写真をタッチ（クリック）すると消せます（季節のイラストも同じ）。<b>毎月1日をすぎて最初にアプリを開いたとき、前の月までに入れた写真は自動で消えます</b>（ロゴ・季節のイラストは消えません）。</p>
   <label class="help" style="display:block"><input type="checkbox" id="f-autofill" ${state.data.autoFill === false ? '' : 'checked'}> 2ページ目の下が大きく空いたときは、季節のイラストを入れる</label>
   ${seasonCard()}`;
   state.data.sections.forEach((s, i) => {
@@ -711,6 +710,13 @@ async function removeIllustOf(kind, month, id) {
   }
   changed(); renderPanel();
 }
+
+// 写真・季節のイラストをタッチ（クリック）で消す（×ボタンと同じ。消す前に確かめる）
+// 並べ替えのドラッグのあとは、ブラウザがクリックを出さないので、ぶつからない
+$('#panel').addEventListener('click', (e) => {
+  const el = e.target.closest && e.target.closest('.thumb, .ill-thumb'); if (!el || e.target.closest('button')) return;
+  const del = el.querySelector('[data-ph="del"], [data-ill-del]'); if (del) del.click();
+});
 
 // 写真のドラッグ（並べ替え・ほかの記事への移動）。パソコンからのファイルのドラッグでは入れない（学校のパソコンではJPGが止められるので、コピーして貼り付けにそろえた）
 let dragging = null;
@@ -905,13 +911,6 @@ function subjectKey(label) {
 /** ⑥カリキュラムと、③の「カリキュラムから入れる」のボタン。処理したら true */
 async function curriculumClick(t, d, i) {
   const g = d.grade; const c = curriculum[g];
-  if (t.id === 'btn-cur-sample') {
-    try {
-      const r = await fetch('assets/curriculum-sample.docx'); if (!r.ok) throw new Error();
-      await importCurriculum(new Uint8Array(await r.arrayBuffer()), 'サンプル（仮のデータ）', true);
-    } catch { toast('サンプルを読み込めませんでした'); }
-    return true;
-  }
   if (t.id === 'btn-from-cur' && c) {
     const m = d.month;
     const filled = d.learning.some((it) => it.lines.length);
