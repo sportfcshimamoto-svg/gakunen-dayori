@@ -513,12 +513,51 @@ async function aiClick(t, btn) {
   }
 }
 
+// ---------- （試し）パソコンのフォルダから写真を読めるか ----------
+// 学校のパソコンで、フォルダを選んで中の写真を読めるかだけを確かめる。写真は入れない・保存しない・外に送らない
+let folderTest = '';
+function folderTestCard() {
+  return `<div class="card"><div class="card-head"><b>（試し）フォルダの写真を読めるか確かめる</b></div>
+    <p class="help" style="margin:4px 0">「学年だより」のフォルダ（中に「12月」などのフォルダ）を選ぶと、見つかった写真の枚数を出します。写真は入れません。</p>
+    <div class="adder" style="margin:6px 0 0"><button id="btn-dirtest">フォルダを選んで確かめる</button></div>
+    <div id="dir-test-status" class="notice" style="margin-top:6px;white-space:pre-wrap" ${folderTest ? '' : 'hidden'}>${esc(folderTest)}</div></div>`;
+}
+function showFolderTest(msg) { folderTest = msg; const el = $('#dir-test-status'); if (el) { el.textContent = msg; el.hidden = false; } }
+async function testFolder() {
+  if (!window.showDirectoryPicker) { showFolderTest('このブラウザでは、フォルダを選ぶ機能が使えません（Edge か Chrome で開いてください）。'); return; }
+  let dir;
+  try { dir = await window.showDirectoryPicker({ mode: 'read' }); }
+  catch (e) { showFolderTest(e && e.name === 'AbortError' ? 'フォルダを選ばずに閉じました（または、学校のパソコンの設定で止められました）。' : `フォルダを選べませんでした（${e && e.name || e}）。`); return; }
+  const isImg = (n) => /\.(jpe?g|png|hei[cf])$/i.test(n);
+  const lines = [`選んだフォルダ：「${dir.name}」`];
+  let first = null; let total = 0;
+  try {
+    const count = async (d, label) => {
+      let n = 0;
+      for await (const h of d.values()) if (h.kind === 'file' && isImg(h.name)) { n++; if (!first) first = h; }
+      if (n) lines.push(`　${label}：写真 ${n}枚`); total += n;
+    };
+    await count(dir, '（このフォルダの中）');
+    for await (const h of dir.values()) if (h.kind === 'directory') await count(h, `「${h.name}」フォルダ`);
+  } catch (e) { lines.push(`中を見られませんでした（${e && e.name || e}）。`); showFolderTest(lines.join('\n')); return; }
+  if (!total) { lines.push('写真（JPG・PNG・HEIC）は見つかりませんでした。'); showFolderTest(lines.join('\n')); return; }
+  try {
+    const f = await first.getFile(); const buf = await f.arrayBuffer();
+    let ok = '';
+    if (!/hei[cf]$/i.test(f.name)) { const bmp = await createImageBitmap(f); ok = `（${bmp.width}×${bmp.height}）`; bmp.close && bmp.close(); }
+    lines.push(`1枚目の写真「${f.name}」も読めました${ok}。${Math.round(buf.byteLength / 1024)}KB`);
+    lines.push('→ この方法なら、フォルダから写真を入れる機能を作れそうです。');
+  } catch (e) { lines.push(`写真の中身は読めませんでした（${e && e.name || e}）。学校のパソコンの設定で止められているかもしれません。`); }
+  showFolderTest(lines.join('\n'));
+}
+
 // ---------- ⑤ 2ページ目 ----------
 function panelPage2() {
   newsletterData();   // 季節のイラストの置き場所（lastPlacement）を最新にする
   let h =`<h2>2ページ目の記事</h2><p class="help">改行すると新しい段落になります。下線を引きたいところは __このように__ 下線2本ずつではさみます。</p>
   <p class="help">写真の入れ方：写真を開いて Ctrl＋C でコピーし、記事の下の「ここに Ctrl＋V で写真を貼り付け」の欄をクリックして Ctrl＋V（季節のイラスト・ロゴも同じ）。写真は、このパソコンのブラウザの中だけに保存します（インターネットには送りません）。Wordでは白黒になります。並べ替えは、写真をドラッグするか ← → で行えます。写真をタッチ（クリック）すると消せます（季節のイラストも同じ）。<b>毎月1日をすぎて最初にアプリを開いたとき、前の月までに入れた写真は自動で消えます</b>（ロゴ・季節のイラストは消えません）。</p>
   <label class="help" style="display:block"><input type="checkbox" id="f-autofill" ${state.data.autoFill === false ? '' : 'checked'}> 2ページ目の下が大きく空いたときは、季節のイラストを入れる</label>
+  ${folderTestCard()}
   ${seasonCard()}`;
   state.data.sections.forEach((s, i) => {
     const off = s.photoOff || [];
@@ -855,6 +894,7 @@ async function readClipboardTable() {
 $('#panel').addEventListener('click', async (e) => {
   if (e.target.id === 'btn-sheet') { await loadSheet($('#f-sheet').value); return; }
   if (e.target.id === 'btn-curclip') { await readClipboardTable(); return; }
+  if (e.target.id === 'btn-dirtest') { await testFolder(); return; }
   const t = e.target.closest('button'); if (!t) return;
   if (t.dataset.clipKind) { await readClipboardImages(t.dataset.clipKind, Number(t.dataset.n)); return; }
   const d = state.data; const i = Number(t.dataset.i);
