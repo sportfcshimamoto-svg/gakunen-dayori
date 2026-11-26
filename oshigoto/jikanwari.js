@@ -138,7 +138,7 @@
     idea = null;
     if (!on) { $('result').innerHTML = '<p class="help">まだ読み込んでいません。</p>'; $('how').innerHTML = ''; return; }
     const s = samples[cur], rows = parse(s.text, s.delim);
-    idea = readIdea(rows);
+    idea = readIdea(rows, opts);
     const cols = Math.max(0, ...rows.map((r) => r.length));
     const info = `<dl class="info">
         <dt>ファイル</dt><dd>${esc(s.name)}</dd>
@@ -149,7 +149,9 @@
     if (idea) {
       const nSplit = idea.classes.reduce((a, c) => a + c.cells.filter((x) => x.pair).length, 0);
       $('result').innerHTML = info + `
-        <p class="help">スプレッドシートの一覧表（C列〜AE列：月1〜6・火1〜6・水1〜5・木1〜6・金1〜6）の形にしました。マスにマウスをのせると、txtにあった名前が出ます。</p>
+        <p class="help">スプレッドシートの一覧表（C列〜AE列：月1〜6・火1〜6・水1〜5・木1〜6・金1〜6）の形にしました。マスにマウスをのせると、txtにあった名前が出ます。「〇年プール」は「プール」にします。</p>
+        <div class="row">書き方：図書は <select id="oTosho">${['図書', '国（図書）'].map((v) => `<option${(opts.tosho || '図書') === v ? ' selected' : ''}>${v}</option>`).join('')}</select>
+          クラブは <select id="oClub">${['クラブ', 'ク・委'].map((v) => `<option${(opts.club || 'クラブ') === v ? ' selected' : ''}>${v}</option>`).join('')}</select></div>
         ${nSplit ? `<p class="help"><span class="legend-split">黄色</span>は2つの教科を半分ずつする授業です（${nSplit}マス）。同じ時間に2クラスで分ける授業は、2つめのクラスを逆にしてあります。前後がちがうマスは、<b>押すと入れかわります</b>（このパソコンに覚えます）。</p>` : ''}
         ${idea.dropped.length ? `<p class="ng">一覧表にない時間に授業があります（コピーに入りません）：${idea.dropped.map(esc).join('、')}</p>` : ''}
         ${ideaTable(idea)}
@@ -163,6 +165,8 @@
       $('how').innerHTML = '<li>スプレッドシートの貼りたいタブの <b>A1</b> をクリックして <b>Ctrl + V</b>（txtの並びのまま入ります）</li>';
     }
     $('delim').addEventListener('change', (e) => { s.delim = e.target.value; render(); });
+    if ($('oTosho')) $('oTosho').addEventListener('change', (e) => { opts.tosho = e.target.value; saveO(); render(); });
+    if ($('oClub')) $('oClub').addEventListener('change', (e) => { opts.club = e.target.value; saveO(); render(); });
     renderTeachers();
   }
 
@@ -171,9 +175,20 @@
   let teachers = null; try { teachers = JSON.parse(localStorage.getItem(TKEY) || 'null'); } catch { teachers = null; }
   const saveT = () => { try { localStorage.setItem(TKEY, JSON.stringify(teachers)); } catch { /* 覚えられなくても今回は使える */ } };
   let openT = -1;
-  const { CODE_NAME, subjectsIn, teacherRow, gradeOf, presetTeachers, PRESET } = window.JikanwariCore;
-  // 前に覚えた設定に、あとから足した項目がなければ、はじめの設定の同じ名前の先生からとる
-  if (teachers) teachers.forEach((te) => { if (te.halfNoSubj === undefined) { const p = PRESET.find((x) => x.label === te.label); te.halfNoSubj = !!(p && p.halfNoSubj); } });
+  const { CODE_NAME, subjectsIn, teacherRow, gradeOf, presetTeachers, PRESET, omitOf, halfStyleOf } = window.JikanwariCore;
+  // 前に覚えた設定を、いまの形に（教科を書かない・半分ずつの書き方は選ぶ形に。支援担会議は「道徳 特活」の時間に）
+  if (teachers) teachers.forEach((te) => {
+    if (te.halfStyle === undefined) { const p = PRESET.find((x) => x.label === te.label); te.halfStyle = te.halfNoSubj ? 'none' : (p && p.halfStyle) || 'each'; }
+    if (te.omit === undefined) te.omit = omitOf(te);
+    delete te.noSubj; delete te.halfNoSubj;
+    (te.fixed || []).forEach((f) => { if (f.text === '支援担会議' && f.slots === '火2 金1') f.slots = '道徳 特活'; });
+  });
+  if (teachers) saveT();
+
+  // クラスの行の書き方（図書・クラブ）。時間割によって変わるので選べるように
+  const OKEY = 'jikanwari-opts';
+  let opts; try { opts = JSON.parse(localStorage.getItem(OKEY) || '{}') || {}; } catch { opts = {}; }
+  const saveO = () => { try { localStorage.setItem(OKEY, JSON.stringify(opts)); } catch { /* 今回だけ使う */ } };
 
   function summary(te) {
     const by = {};
@@ -206,12 +221,13 @@
     const fixed = (te.fixed && te.fixed.length ? te.fixed : [{ slots: '', text: '' }]);
     return `<div class="body" data-i="${i}">
       <div class="row">A列の名前 <input type="text" data-act="label" value="${esc(te.label || '')}" style="width:8em">
-        <label><input type="checkbox" data-act="noSubj"${te.noSubj ? ' checked' : ''}> 教科を書かない（音楽・外国語・図書など：「４－１」とだけ書く）</label>
-        <label><input type="checkbox" data-act="halfNoSubj"${te.halfNoSubj ? ' checked' : ''}> 半分ずつの授業は教科を書かない（「3-1/3-2」と書く）</label></div>
+</div>
+      <div class="row">教科を書かない <select data-act="omit">${[['', 'なし（「４－１理」と書く）'], ['all', '全部（「４－１」とだけ書く：音楽・外国語・図書など）'], ...[...new Set((te.picks || []).map((k) => k.split('|')[1]))].map((c) => [c, `${CODE_NAME[c] || c}だけ（${CODE_NAME[c] || c}は「４－１」、ほかは「５年算」など）`])].map(([v, l]) => `<option value="${esc(v)}"${omitOf(te) === v ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
+      <div class="row">半分ずつの授業 <select data-act="halfStyle">${[['each', '3-1理/3-2理'], ['none', '3-1/3-2（教科を書かない）'], ['end', '3-1/3-2理（教科を後ろに1つ）']].map(([v, l]) => `<option value="${v}"${halfStyleOf(te) === v ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
       <div class="tablewrap" style="max-height:none"><table class="pick"><thead><tr><th>教科＼クラス</th>${classHead}</tr></thead><tbody>${rows}</tbody></table></div>
       <p class="help">灰色はそのクラスにない教科です。教科の名前を押すと、全部のクラスをまとめて選べます。</p>
       ${names.length ? `<div class="excl"><span class="help">入れる授業（イデアの授業名。担任がする授業などは、はずす）：</span><br>${names.map((n) => `<label><input type="checkbox" data-act="excl" data-n="${esc(n)}"${excl.has(n) ? '' : ' checked'}> ${esc(n)}</label>`).join('')}</div>` : ''}
-      ${fixed.map((f, fi) => `<div class="row">決まった予定 <input type="text" data-act="fslots" data-f="${fi}" value="${esc(f.slots || '')}" placeholder="例：火2 金1" style="width:8em"> に <input type="text" data-act="ftext" data-f="${fi}" value="${esc(f.text || '')}" placeholder="例：支援担会議" style="width:10em"> と書く</div>`).join('')}
+      ${fixed.map((f, fi) => `<div class="row">決まった予定 <input type="text" data-act="fslots" data-f="${fi}" value="${esc(f.slots || '')}" placeholder="例：道徳 特活" title="「火2 金1」のように曜日と時間、または「道徳 特活」「クラブ」のように教科（その教科がある時間）" style="width:8em"> に <input type="text" data-act="ftext" data-f="${fi}" value="${esc(f.text || '')}" placeholder="例：支援担会議" style="width:10em"> と書く</div>`).join('')}
       <div class="row"><button class="mini" data-act="fadd">＋ 決まった予定を足す</button><button class="mini" data-act="up">↑ 上へ</button><button class="mini" data-act="down">↓ 下へ</button><button class="mini" data-act="del">この先生を消す</button></div>
     </div>`;
   }
@@ -264,8 +280,8 @@
     const body = el.closest('.body'); const te = teachers[+body.dataset.i];
     if (act === 'pick') { te.picks = el.checked ? [...new Set([...te.picks, el.dataset.k])] : te.picks.filter((k) => k !== el.dataset.k); }
     else if (act === 'excl') { const n = el.dataset.n; te.excl = el.checked ? (te.excl || []).filter((x) => x !== n) : [...new Set([...(te.excl || []), n])]; }
-    else if (act === 'noSubj') te.noSubj = el.checked;
-    else if (act === 'halfNoSubj') te.halfNoSubj = el.checked;
+    else if (act === 'omit') te.omit = el.value;
+    else if (act === 'halfStyle') te.halfStyle = el.value;
     else return;
     saveT(); renderTeachers();
   });
@@ -277,7 +293,7 @@
     body.parentElement.querySelector('summary .sum').textContent = summary(te);
     saveT(); renderPreview();
   });
-  $('tAdd').addEventListener('click', () => { if (!idea) return; teachers.push({ label: '', picks: [], excl: [], noSubj: false, fixed: [] }); openT = teachers.length - 1; saveT(); renderTeachers(); });
+  $('tAdd').addEventListener('click', () => { if (!idea) return; teachers.push({ label: '', picks: [], excl: [], omit: '', halfStyle: 'each', fixed: [] }); openT = teachers.length - 1; saveT(); renderTeachers(); });
   $('tReset').addEventListener('click', () => { if (!idea || !confirm('先生の行を、はじめの設定（支援①〜⑥・支援員・首席・音楽・理専・軽減・外国語・図書）にもどしますか？')) return; teachers = presetTeachers(idea); openT = -1; saveT(); renderTeachers(); });
   $('tCopy').addEventListener('click', async () => {
     if (!idea) return;

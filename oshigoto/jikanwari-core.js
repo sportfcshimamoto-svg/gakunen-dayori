@@ -10,20 +10,24 @@
   const norm = (s) => String(s || '').normalize('NFKC').replace(/[‐－−―ー]/g, '-').replace(/\s+/g, ' ').trim();
 
   // 1マスを変える。「5年図家 (図画工作、家庭 )」→ { text:'図/家', pair:['図','家'] }
-  function convCell(raw) {
+  // opts：{ tosho: 図書の書き方（'図書' か '国（図書）'）, club: クラブの書き方（'クラブ' か 'ク・委'） }
+  function convCell(raw, opts) {
+    const o = opts || {};
     const c = String(raw || '').trim();
     if (!c) return { text: '', pair: null };
+    if (/プール/.test(c)) return { text: 'プール', pair: null }; // 「1と6年プール (体育 )」→ プール
     const m = /^(.*?)\s*[（(](.*)[)）]\s*$/.exec(c);
-    if (!m) { const n = norm(c); return { text: SUBJ[n] || n, pair: null }; }
+    const one = (x) => x === '図書' ? (o.tosho || '図書') : x === 'クラブ' ? (o.club || 'クラブ') : (SUBJ[x] || x);
+    if (!m) return { text: one(norm(c)), pair: null };
     const subs = m[2].split(/[、,，]/).map(norm).filter(Boolean);
-    if (subs.includes('図書')) return { text: '図書', pair: null }; // 「国語、図書」→ 図書
-    if (subs.length === 1) return { text: SUBJ[subs[0]] || subs[0], pair: null };
+    if (subs.includes('図書')) return { text: one('図書'), pair: null }; // 「国語、図書」→ 図書
+    if (subs.length === 1) return { text: one(subs[0]), pair: null };
     const pair = subs.slice(0, 2).map((x) => HALF[x] || x[0]);
     return { text: pair.join('/'), pair };
   }
 
   // 表（行×列の文字）を読む。読めなければ null
-  function readIdea(rows) {
+  function readIdea(rows, opts) {
     const isDay = (s) => /^(月|火|水|木|金|土|日)(曜日?)?$/.test(norm(s));
     const hr = rows.findIndex((r) => r.filter(isDay).length >= 5);
     if (hr < 0 || !rows[hr + 1]) return null;
@@ -48,7 +52,7 @@
         const slot = SLOTS.find(([x]) => x === d);
         if ((!slot || +p > slot[1]) && String(r[i] || '').trim()) dropped.push(`${name} ${d}${p}「${String(r[i]).trim()}」`);
       }
-      classes.push({ name, raws, cells: raws.map(convCell) });
+      classes.push({ name, raws, cells: raws.map((x) => convCell(x, opts)) });
     }
     if (!classes.length) return null;
     // 2つの教科を半分ずつする授業（理/図など）を、同じ時間に2クラスで分けるとき（「3-12理図」など）は、
@@ -74,8 +78,8 @@
 
   // ---- 先生の行 ----
   // 教科の記号（先生の行に書く1字）。図書は「書」で選ぶが、書くときは学級だけ（図書の先生は専科の書き方）
-  const CODE = { '国語': '国', '算数': '算', '理科': '理', '社会': '社', '体育': '体', '音楽': '音', '図工': '図', '家庭': '家', '外国語': '外', '生活': '生', '総合': '総', '図書': '書', '道徳': '道', '特活': '特', 'クラブ': 'ク', '書写': '習' };
-  const CODE_NAME = { 国: '国語', 算: '算数', 理: '理科', 社: '社会', 体: '体育', 音: '音楽', 図: '図工', 家: '家庭', 外: '外国語', 生: '生活', 総: '総合', 書: '図書', 道: '道徳', 特: '特活', ク: 'クラブ', 習: '書写' };
+  const CODE = { '国語': '国', '算数': '算', '理科': '理', '社会': '社', '体育': '体', '音楽': '音', '図工': '図', '家庭': '家', '外国語': '外', '生活': '生', '総合': '総', '図書': '書', '道徳': '道', '特活': '特', 'クラブ': 'ク', '書写': '習', 'プール': 'プ', '国（図書）': '書', 'ク・委': 'ク' };
+  const CODE_NAME = { 国: '国語', 算: '算数', 理: '理科', 社: '社会', 体: '体育', プ: 'プール', 音: '音楽', 図: '図工', 家: '家庭', 外: '外国語', 生: '生活', 総: '総合', 書: '図書', 道: '道徳', 特: '特活', ク: 'クラブ', 習: '書写' };
   const codeOf = (s) => CODE[s] || s;
   const gradeOf = (name) => (/^(\d+)/.exec(name) || [])[1] || name;
   const FW = (s) => s.replace(/[0-9]/g, (d) => String.fromCharCode(d.charCodeAt(0) + 0xFEE0)).replace(/-/g, '－');
@@ -97,14 +101,25 @@
     codes.sort((a, b) => (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99));
     return { codes, names };
   }
-  // 決まった予定の「火2 金1」を、マスの番号に
+  // 決まった予定の時間を、マスの番号に。「火2 金1」のほか、「道徳 特活」のように教科の名前でもよい（その教科があるクラスがある時間）
   function slotsOf(t, s) {
-    const out = [];
-    for (const m of String(s || '').normalize('NFKC').matchAll(/(月|火|水|木|金)\s*(\d)/g)) { const j = t.labels.indexOf(m[1] + m[2]); if (j >= 0) out.push(j); }
-    return out;
+    const out = new Set();
+    for (const tok of String(s || '').normalize('NFKC').split(/[\s・、,]+/).filter(Boolean)) {
+      const m = /^(月|火|水|木|金)(\d)$/.exec(tok);
+      if (m) { const j = t.labels.indexOf(m[1] + m[2]); if (j >= 0) out.add(j); continue; }
+      const code = CODE[tok] || CODE[SUBJ[tok]] || (CODE_NAME[tok] ? tok : null); if (!code) continue;
+      t.labels.forEach((_, j) => { if (t.classes.some((c) => lessonsAt(c, j).some((x) => x.code === code))) out.add(j); });
+    }
+    return [...out];
   }
+  // 前の設定（noSubj・halfNoSubj）を、いまの設定（omit・halfStyle）に
+  const omitOf = (te) => te.omit != null ? te.omit : te.noSubj ? 'all' : '';
+  const halfStyleOf = (te) => te.halfStyle || (te.halfNoSubj ? 'none' : 'each');
   // 先生1人の行（29マス）を作る
-  // teacher = { label, picks: ['4-1|理', ...], excl: ['2年音楽 (音楽 )', ...], noSubj: 専科の書き方（学級だけ）, halfNoSubj: 半分ずつの授業は学級だけ（3-1/3-2）, fixed: [{ slots: '火2 金1', text: '支援担会議' }] }
+  // teacher = { label, picks: ['4-1|理', ...], excl: ['2年音楽 (音楽 )', ...],
+  //   omit: 書かない教科（''＝全部書く、'all'＝全部書かない〔音楽・図書など〕、'理' など＝その教科だけ書かない〔理専の「５－１」〕）,
+  //   halfStyle: 半分ずつの授業の書き方（'each'＝3-1理/3-2理、'none'＝3-1/3-2、'end'＝3-1/3-2理）,
+  //   fixed: [{ slots: '道徳 特活', text: '支援担会議' }] }
   function teacherRow(t, teacher, flips) {
     const picks = new Set(teacher.picks || []), excl = new Set(teacher.excl || []);
     const fixed = {}; (teacher.fixed || []).forEach((f) => { if (f.text) slotsOf(t, f.slots).forEach((j) => { fixed[j] = f.text; }); });
@@ -118,40 +133,48 @@
           if (half) halves[half - 1].push({ cls: c.name, code }); else whole.push({ cls: c.name, code, raw: c.raws[j] });
         });
       });
-      const subj = (code) => teacher.noSubj ? '' : (code === '書' ? '図書' : code);
+      const omit = omitOf(teacher), hs = halfStyleOf(teacher);
+      const subj = (code) => omit === 'all' || omit === code ? '' : (code === '書' ? '図書' : code);
       const parts = [];
-      // まるごとの授業：同じ授業名・同じ教科ごとにまとめ、学年の全部のクラスなら「５年算」、2学年いっしょなら「1,2年国」
+      // まるごとの授業：教科ごとにまとめる。学年の全部のクラスなら「５年算」、2学年いっしょなら「1,2年国」、1クラスなら「４－１理」、
+      // いくつかのクラスなら「3-1,6-2社」「3-1,2社」
       const groups = [];
-      whole.forEach((w) => { let g = groups.find((x) => x.code === w.code && x.raw === w.raw); if (!g) groups.push(g = { code: w.code, raw: w.raw, cls: [] }); g.cls.push(w.cls); });
-      groups.forEach((g) => {
-        const fullGrades = Object.keys(byGrade).filter((gr) => byGrade[gr].length > 1 && byGrade[gr].every((n) => g.cls.includes(n)));
-        const rest = g.cls.filter((n) => !fullGrades.includes(gradeOf(n)));
-        if (fullGrades.length > 1) parts.push(`${fullGrades.join(',')}年${subj(g.code)}`);
-        else if (fullGrades.length === 1) parts.push(FW(`${fullGrades[0]}年`) + subj(g.code));
-        rest.forEach((n) => parts.push(FW(n) + subj(g.code)));
+      whole.forEach((w) => { let g = groups.find((x) => x.code === w.code); if (!g) groups.push(g = { code: w.code, cls: [] }); if (!g.cls.includes(w.cls)) g.cls.push(w.cls); });
+      const wholeParts = groups.map((g) => {
+        const grades = [...new Set(g.cls.map(gradeOf))];
+        const full = (gr) => byGrade[gr].length > 1 && byGrade[gr].every((n) => g.cls.includes(n));
+        if (grades.every(full)) return grades.length > 1 ? `${grades.join(',')}年${subj(g.code)}` : FW(`${grades[0]}年`) + subj(g.code);
+        if (g.cls.length === 1) return FW(g.cls[0]) + subj(g.code);
+        return grades.map((gr) => full(gr) ? `${gr}年` : `${gr}-${g.cls.filter((n) => gradeOf(n) === gr).map((n) => n.slice(gr.length + 1)).join(',')}`).join(',') + subj(g.code);
       });
-      if (halves[0].length || halves[1].length) parts.push(halves.map((h) => h.map((x) => x.cls + (teacher.halfNoSubj ? '' : subj(x.code))).join('・')).join('/'));
+      // 2つ以上の教科をならべるときは半角で「3-2,3社,6-2国」
+      if (wholeParts.length) parts.push(wholeParts.length > 1 ? wholeParts.map((x) => x.normalize('NFKC')).join(',') : wholeParts[0]);
+      if (halves[0].length || halves[1].length) {
+        const strs = halves.map((h) => h.map((x) => x.cls + (hs === 'each' ? subj(x.code) : '')).join('・'));
+        if (hs === 'end') { const k = halves[1].length ? 1 : 0; strs[k] += subj(halves[k][halves[k].length - 1].code); }
+        parts.push(strs.join('/'));
+      }
       if (fixed[j]) parts.push(fixed[j]);
       return parts.join('・');
     });
   }
 
   // はじめの先生の行（2026年度の時間割の一覧表と同じ。名前は入れない）。sel：学年（'4'）かクラス（'6-1'）→ 教科の記号
-  const MEETING = [{ slots: '火2 金1', text: '支援担会議' }];
+  const MEETING = [{ slots: '道徳 特活', text: '支援担会議' }]; // 道徳・特活は全クラス同じ時間（担任が教室にいる時間）
   const PRESET = [
     { label: '支援①', sel: { 4: '理算', 5: '理算' }, fixed: MEETING },
     { label: '支援②', sel: { 1: '国図', 2: '国図' }, fixed: MEETING },
     { label: '支援③', sel: { 4: '国社', 5: '国社' }, fixed: MEETING },
-    { label: '支援④', sel: { 2: '体算', 3: '理算' }, fixed: MEETING, halfNoSubj: true },
+    { label: '支援④', sel: { 2: '体算', 3: '理算' }, fixed: MEETING, halfStyle: 'none' },
     { label: '支援⑤', sel: { 3: '国社', '6-1': '国社', '6-2': '国社' }, fixed: MEETING },
     { label: '支援⑥', sel: { 1: '体算', 6: '算', '6-1': '理', '6-2': '理' }, fixed: MEETING },
     { label: '支援員', sel: {} },
     { label: '首席', sel: { 4: '算', 6: '理' } },
-    { label: '音楽', sel: { 2: '音', 3: '音', 4: '音', 5: '音', 6: '音' }, noSubj: true, excl: ['2年音楽 (音楽 )'] },
+    { label: '音楽', sel: { 2: '音', 3: '音', 4: '音', 5: '音', 6: '音' }, omit: 'all', excl: ['2年音楽 (音楽 )'] },
     { label: '理専', sel: { 4: '理', 5: '理算' } },
-    { label: '軽減', sel: { 3: '理' }, halfNoSubj: true },
-    { label: '外国語', sel: { 5: '外', 6: '外' }, noSubj: true },
-    { label: '図書', sel: { 1: '書', 2: '書', 3: '書', 4: '書', 5: '書', 6: '書' }, noSubj: true },
+    { label: '軽減', sel: { 3: '理' }, halfStyle: 'none' },
+    { label: '外国語', sel: { 5: '外', 6: '外' }, omit: 'all' },
+    { label: '図書', sel: { 1: '書', 2: '書', 3: '書', 4: '書', 5: '書', 6: '書' }, omit: 'all' },
   ];
   // sel を、いまのtxtのクラスで picks（'4-1|理'）にする
   function expandSel(t, sel) {
@@ -162,7 +185,7 @@
     }
     return picks;
   }
-  const presetTeachers = (t) => PRESET.map((p) => ({ label: p.label, picks: expandSel(t, p.sel), excl: p.excl || [], noSubj: !!p.noSubj, halfNoSubj: !!p.halfNoSubj, fixed: (p.fixed || []).map((f) => ({ ...f })) }));
+  const presetTeachers = (t) => PRESET.map((p) => ({ label: p.label, picks: expandSel(t, p.sel), excl: p.excl || [], omit: p.omit || '', halfStyle: p.halfStyle || 'each', fixed: (p.fixed || []).map((f) => ({ ...f })) }));
 
-  root.JikanwariCore = { SLOTS, convCell, readIdea, cellText, flipKey, CODE_NAME, subjectsIn, teacherRow, gradeOf, presetTeachers, PRESET };
+  root.JikanwariCore = { SLOTS, convCell, readIdea, cellText, flipKey, CODE_NAME, subjectsIn, teacherRow, gradeOf, presetTeachers, PRESET, omitOf, halfStyleOf };
 })(typeof window !== 'undefined' ? window : globalThis);
