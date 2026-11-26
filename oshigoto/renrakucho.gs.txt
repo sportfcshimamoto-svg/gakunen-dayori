@@ -9,7 +9,8 @@
  *       （例「水曜　③体育　それ以外通り（13：15下校）」）。早く帰る日だけ下校時刻
  *   し：週案の「宿題」の行
  *   持：月曜セット（次の日が次の週）・体そう服（次の日に体育）。先生が書き足したものは残す
- * 「連」「音」など、ほかの行はさわらない。
+ *   音・連：週案の宿題の下の「音」「連」の行。中身がある日だけ、連絡帳のその日に「音」「連」の行を作る（なければ行を作らない・消す）
+ * ほかの見出しの行はさわらない。
  * 連絡帳の手入力が優先：週案が変わったマスだけ書き直す。連絡帳で手直ししたマスは、週案が変わってもそのまま残す
  * （週案の内容にもどすのは、メニュー「週案から自動入力」を押したときだけ）。
  * 週案を直すとすぐ（週案の「編集」のしかけ）、ほかに10分ごとにも見る（週案のメニューでタブを作ったときなど）。
@@ -26,7 +27,8 @@ var DEFAULT_SETTINGS = {
   mondaySet: '月曜セット',                              // 次の日が次の週のとき
   items: [{ subject: '体育', item: '体そう服' }],       // 次の日にこの教科があるとき（月曜セットの日は書かない）
 };
-var AHEAD_WEEKS = 6;                                             // 10分ごとに週案と見比べるのは、今週から何週先まで（タブは週案にある週をすべて作る）
+var EXTRA_KINDS = ['音', '連'];   // 週案の宿題の下の行。中身がある日だけ、連絡帳にその行を作る（「し」と「持」のあいだ）
+var AHEAD_WEEKS = 6;                                            // 10分ごとに週案と見比べるのは、今週から何週先まで（タブは週案にある週をすべて作る）
 var MARU = ['', '①', '②', '③', '④', '⑤', '⑥'];
 
 // ---------- メニュー ----------
@@ -115,7 +117,7 @@ function saveSettings(x) {
 function menuFill() {
   var ui = SpreadsheetApp.getUi();
   if (!PropertiesService.getDocumentProperties().getProperty('shuanId')) { ui.alert('先に「連絡帳 → はじめに：週案をつなぐ」をしてください。'); return; }
-  var ok = ui.alert('週案から自動入力', '連絡帳で直接手入力した内容が、週案の内容にもどります。よろしいですか？\n（今週から先の週の「時」「し」と、決まった持ち物が対象です。先生が書き足した持ち物と「連」はそのままです）', ui.ButtonSet.OK_CANCEL);
+  var ok = ui.alert('週案から自動入力', '連絡帳で直接手入力した内容が、週案の内容にもどります。よろしいですか？\n（今週から先の週の「時」「し」「音」「連」と、決まった持ち物が対象です。先生が書き足した持ち物はそのままです）', ui.ButtonSet.OK_CANCEL);
   if (ok !== ui.Button.OK) return;
   var lock = LockService.getDocumentLock();
   lock.waitLock(30000);
@@ -268,6 +270,11 @@ function readDay_(vals, bgs, cl, day, date) {
     if (hit * 2 < d.n) d.event = '';
   }
   if (cl.rows['宿題']) d.hw = String(at_(vals, col, cl.rows['宿題']) || '').split(/\n+/).map(clean_).filter(Boolean).join('、');
+  // 「音」「連」の行（あれば）：連絡帳の同じ日の「音」「連」に書く
+  d.extra = {};
+  EXTRA_KINDS.forEach(function (kind) {
+    if (cl.rows[kind]) d.extra[kind] = String(at_(vals, col, cl.rows[kind]) || '').split(/\n+/).map(clean_).filter(Boolean).join('　');
+  });
   // 休み：週案でその日の1〜6校時がグレー、または祝日で授業がない日。名前は祝日の名前、なければ週案に書いた行事（「振替休業日」など）、なければ「休み」
   var gray = 0, cells = 0;
   PERIODS.forEach(function (p) { var r = cl.rows[p]; if (!r) return; cells++; if (isGray_((bgs[r - 1] || [])[col - 1])) gray++; });
@@ -319,6 +326,7 @@ function weekTexts_(ctx, mon, cname) {
   cur.classes[cname].forEach(function (d, i) {
     if (!d.school) { out.push(null); return; }
     var t = { し: d.hw };
+    EXTRA_KINDS.forEach(function (kind) { if (d.extra[kind] !== undefined) t[kind] = d.extra[kind]; });   // 週案に「音」「連」の行があるときだけ
     // 次の学校の日（この週の中、なければ次の週）
     var next = null, skipped = [], tpl = cur.tpl[cname];
     for (var j = i + 1; j < 5 && !next; j++) { var x = cur.classes[cname][j]; if (x.school) next = x; else if (x.hol) skipped.push(x.day); }
@@ -416,7 +424,7 @@ function renrakuShape_(vals) {
         if (r > r0 && !norm_(at_(vals, lc, r)) && norm_(at_(vals, k.col, r))) break;   // 下の「☆予定や宿題に…」
         all.push(r);
         var lab = norm_(at_(vals, lc, r));
-        if (/^(時|し|持)$/.test(lab) && !rows[lab]) rows[lab] = r;
+        if (/^(時|し|音|連|持)$/.test(lab) && !rows[lab]) rows[lab] = r;
       }
       var blk = { start: r0, rows: rows, all: all };
       k.blocks.push(blk);
@@ -434,6 +442,7 @@ function syncSheet_(sh, mon, ctx, force) {
   var memo = JSON.parse(props.getProperty(key) || '{}');   // 前に自動で書いた文（手直ししたか見分けるため）
   var cells = 0, today = todayIso_();
   cells += syncHolidays_(sh, mon, ctx, memo, today);
+  cells += syncExtraRows_(sh, mon, ctx, memo, today, force);
   var vals = sh.getDataRange().getDisplayValues();
   renrakuShape_(vals).forEach(function (k) {
     var texts = weekTexts_(ctx, mon, k.cname);
@@ -441,7 +450,7 @@ function syncSheet_(sh, mon, ctx, force) {
     texts.forEach(function (t, i) {
       var day = k.days[i];
       if (!t || !day || addDays_(mon, i) < today) return;   // 過ぎた日（もう配った）はさわらない
-      ['時', 'し', '持'].forEach(function (kind) {
+      ['時', 'し', '音', '連', '持'].forEach(function (kind) {
         var r = day.rows[kind];
         if (!r || t[kind] === undefined) return;
         var id = k.cname + '|' + i + '|' + kind;
@@ -473,6 +482,73 @@ function syncSheet_(sh, mon, ctx, force) {
   });
   props.setProperty(key, JSON.stringify(memo));
   return cells;
+}
+
+/** 「音」「連」の行：週案に中身がある日（どれかの組）だけ、連絡帳のその日に行を作る。いらなくなったら消す。
+ *  1日の行は左右の組で共通なので、行の数は組のうちいちばん多いほうに合わせ、ほかの組は下を空ける。
+ *  手入力した「音」「連」（前に自動で書いた文とちがう）は、週案が空でも残す（メニュー「週案から自動入力」のときは週案どおり）。
+ *  過ぎた日・休みの日・見出しに知らない言葉がある日は、さわらない。変えた日の数を返す */
+function syncExtraRows_(sh, mon, ctx, memo, today, force) {
+  var n = 0;
+  for (var i = 0; i < 5; i++) {
+    if (addDays_(mon, i) < today) continue;
+    var ks = renrakuShape_(sh.getDataRange().getDisplayValues());   // 行を足し引きすると場所が変わるので、日ごとに読みなおす
+    var vals = sh.getDataRange().getDisplayValues();
+    var days = ks.map(function (k) { return k.days[i]; });
+    if (!ks.length || days.some(function (d) { return !d; })) continue;
+    var start = days[0].start, R = days[0].all.length;
+    if (R < 3 || days.some(function (d) { return d.start !== start || d.all.length !== R; })) continue;   // 左右で行がそろっていない日
+    var plan = [], skip = false;
+    ks.forEach(function (k, j) {
+      if (skip) return;
+      var texts = weekTexts_(ctx, mon, k.cname);
+      var t = texts && texts[i];
+      var cur = {};
+      days[j].all.forEach(function (r) {
+        var lab = norm_(at_(vals, k.labelCol, r)), txt = String(at_(vals, k.textCol, r) || '');
+        if (!lab) { if (clean_(txt)) skip = true; return; }   // 見出しのない行に文字
+        if (!/^(時|し|音|連|持)$/.test(lab) || cur[lab] !== undefined) { skip = true; return; }   // 休みの日・知らない見出し
+        cur[lab] = txt;
+      });
+      if (skip || !t) { skip = true; return; }
+      var labels = ['時', 'し'];
+      EXTRA_KINDS.forEach(function (kind) {
+        var now = cur[kind], last = memo[k.cname + '|' + i + '|' + kind];
+        var auto = t[kind] || '';
+        var manual = now !== undefined && clean_(now) && (last === undefined || clean_(now) !== clean_(last));
+        if (auto || (manual && !force)) labels.push(kind);
+      });
+      labels.push('持');
+      plan.push({ k: k, labels: labels, cur: cur });
+    });
+    if (skip || plan.length !== ks.length) continue;
+    var N = Math.max(3, Math.max.apply(null, plan.map(function (p) { return p.labels.length; })));
+    var same = N === R && plan.every(function (p) {
+      return days[0].all.every(function (r, x) { return norm_(at_(vals, p.k.labelCol, r)) === (p.labels[x] || ''); });
+    });
+    if (same) continue;
+    if (N > R) sh.insertRowsAfter(start + 1, N - R);   // 「し」の行の下に足す（罫線は「し」の行と同じ）
+    else if (N < R) sh.deleteRows(start + 2, R - N);
+    plan.forEach(function (p) {
+      var labs = [], txts = [];
+      for (var x = 0; x < N; x++) {
+        var lab = p.labels[x] || '';
+        labs.push([lab]);
+        txts.push([lab && p.cur[lab] !== undefined ? p.cur[lab] : '']);
+      }
+      sh.getRange(start, p.k.labelCol, N, 1).setValues(labs);
+      sh.getRange(start, p.k.textCol, N, 1).setValues(txts);
+      // 行が消えた「音」「連」の、前に自動で書いた文を忘れる（また出たら、はじめて書くマスとして書く）
+      EXTRA_KINDS.forEach(function (kind) { if (p.labels.indexOf(kind) < 0) delete memo[p.k.cname + '|' + i + '|' + kind]; });
+      if (N !== R) for (var c = p.k.col; c <= p.k.col + 2; c++) {   // 月・日・曜日のマスを、その日の行の分つなげなおす
+        var rg = sh.getRange(start, c, N, 1);
+        rg.breakApart();
+        rg.merge();
+      }
+    });
+    n++;
+  }
+  return n;
 }
 
 /** 休みの日（週案でグレー・祝日）を先生の形に：日の最初の行の見出しに休みの名前、ほかの行は空。休みでなくなったら「時・し・持」にもどす */
@@ -638,7 +714,15 @@ function shapeOf_(vals) {
       var lab = norm_(at_(vals, cl.labelCol, r));
       if (/^(朝学|朝学習|モジュール)$/.test(lab)) cl.rows['朝'] = r;
       else if (/^[1-6](\.0+)?$/.test(lab) && !cl.rows[String(parseInt(lab, 10))]) cl.rows[String(parseInt(lab, 10))] = r;
-      else if (lab === '宿題') { cl.rows['宿題'] = r; break; }
+      else if (lab === '宿題') {
+        cl.rows['宿題'] = r;
+        // 宿題の下の「音」「連」の行（週案のメニュー「5年生の形にそろえる」で足す行）
+        for (var r2 = r + 1; r2 <= Math.min(maxR, r + 3); r2++) {
+          var l2 = norm_(at_(vals, cl.labelCol, r2));
+          if (EXTRA_KINDS.indexOf(l2) >= 0 && !cl.rows[l2]) cl.rows[l2] = r2;
+        }
+        break;
+      }
     }
     cl.firstRow = cl.rows['朝'] || cl.rows['1'] || cl.headRow + 1;
   });
