@@ -514,8 +514,9 @@ async function aiClick(t, btn) {
 }
 
 // ---------- パソコンのフォルダから写真を読み込む ----------
-// 「学年だより」フォルダ ＞「12月」フォルダ ＞ 記事の見出しと同じ名前のフォルダ ＞ 写真、の形で置いておくと、
-// ボタン1つで、その月の写真を見出しが同じ記事に入れる（見出しが同じ記事がなければ、その見出しで記事を作る）。
+// 「学年だより写真」フォルダ ＞ 行事の名前のフォルダ（「林間」「春の遠足」など）＞ 写真、の形で置いておくと、
+// ボタン1つで、フォルダの名前が見出しに入っている記事に写真を入れる（「林間」→「林間学校にいってきました」）。
+// 合う記事がないフォルダ（前の月の行事など）は読まない。月のフォルダは作らない（先生の希望）。
 // フォルダは最初の1回だけ選び、このブラウザに覚える（Edge・Chrome の showDirectoryPicker）。写真は外に送らない。
 // 一度読み込んだ写真（フォルダ名・ファイル名・大きさ・更新日時が同じもの）は、同じ記事に二度入れない。
 const FOLDER_DB = 'gakunen-dayori-folder';
@@ -528,16 +529,32 @@ let folderHandle = null;
 folderGet().then((h) => { if (h) { folderHandle = h; renderPanel(); } });
 
 const normName = (x) => String(x || '').normalize('NFKC').replace(/\s+/g, '');
-const monthOfFolder = (name) => { const r = /^0?(\d{1,2})月?/.exec(normName(name)); return r ? Number(r[1]) : 0; };
+// フォルダの名前と見出しの合い方（大きいほどよく合う。0＝合わない）
+// 同じ名前 → 見出しにフォルダの名前が入っている（「林間」→「林間学校にいってきました」）
+// → フォルダの名前に見出しが入っている → 2字以上の同じ言葉がある（「春の遠足」→「遠足に行ってきました」）
+function commonLen(a, b) {
+  let best = 0;
+  for (let i = 0; i < a.length; i++) for (let j = 0; j < b.length; j++) {
+    let k = 0; while (i + k < a.length && j + k < b.length && a[i + k] === b[j + k]) k++;
+    if (k > best) best = k;
+  }
+  return best;
+}
+function folderScore(title, folder) {
+  const t = normName(title); const f = normName(folder); if (!t || !f) return 0;
+  if (t === f) return 1000;
+  if (t.includes(f)) return 500 + f.length;
+  if (f.includes(t)) return 400 + t.length;
+  const c = commonLen(t, f); return c >= 2 ? c : 0;
+}
 const isPhotoName = (n) => /\.(jpe?g|png|hei[cf])$/i.test(n);
 
 function folderCard() {
-  const m = state.data.month;
   return `<div class="card"><div class="card-head"><b>📁 フォルダから写真を読み込む</b></div>
     <div class="adder" style="margin:6px 0 0">${folderHandle
-      ? `<button id="btn-folder-load">${m}月の写真を読み込む</button><button id="btn-folder-pick" class="small">フォルダを選び直す</button><span class="help" style="margin:0">読み込むフォルダ：「${esc(folderHandle.name)}」</span>`
+      ? `<button id="btn-folder-load">写真を読み込む</button><button id="btn-folder-pick" class="small">フォルダを選び直す</button><span class="help" style="margin:0">読み込むフォルダ：「${esc(folderHandle.name)}」</span>`
       : '<button id="btn-folder-pick">フォルダを選ぶ（最初の1回）</button>'}</div>
-    <p class="help" style="margin:6px 0 0">デスクトップなどに「学年だより」フォルダを作り、その中に「${m}月」フォルダ、さらにその中に<b>記事の見出しと同じ名前のフォルダ</b>（例：「音楽会」）を作って写真を入れます。ボタンを押すと、見出しが同じ記事に写真が入ります（見出しが同じ記事がなければ、その見出しで記事を作ります）。一度読み込んだ写真は、二度は入りません。</p></div>`;
+    <p class="help" style="margin:6px 0 0">デスクトップなどに「学年だより写真」フォルダを作り、その中に<b>行事の名前のフォルダ</b>（例：「林間」「音楽会」）を作って写真を入れます。先に下で記事を作り、見出しにその名前を入れておくと（例：「林間学校にいってきました」）、ボタンでその記事に写真が入ります。「春の遠足」「秋の遠足」のように1つの記事に合うフォルダが2つあるときは、写真の新しいほうを使います。合う記事がないフォルダは読みません。一度読み込んだ写真は、二度は入りません。</p></div>`;
 }
 async function pickFolder() {
   if (!window.showDirectoryPicker) { toast('このブラウザでは、フォルダを選ぶ機能が使えません（Edge か Chrome で開いてください）。'); return; }
@@ -549,51 +566,60 @@ async function pickFolder() {
 }
 async function loadFromFolder() {
   const root = folderHandle; if (!root) return;
-  const d = state.data; const m = d.month;
+  const d = state.data;
   try {
     if ((await root.queryPermission({ mode: 'read' })) !== 'granted' && (await root.requestPermission({ mode: 'read' })) !== 'granted') {
       toast('フォルダを見る許可がもらえませんでした。もう一度押して「許可」を選んでください。'); return;
     }
   } catch { /* 許可を聞けないブラウザでは、そのまま読んでみる */ }
   try {
-    // 選んだフォルダが「12月」フォルダそのものなら、それを使う。ちがえば、その中の「12月」フォルダを探す
-    let monthDir = monthOfFolder(root.name) === m ? root : null;
-    if (!monthDir) for await (const h of root.values()) if (h.kind === 'directory' && monthOfFolder(h.name) === m) { monthDir = h; break; }
-    if (!monthDir) { toast(`「${root.name}」フォルダの中に「${m}月」のフォルダが見つかりませんでした。`); return; }
     const subs = []; let loose = 0;
-    for await (const h of monthDir.values()) {
+    for await (const h of root.values()) {
       if (h.kind === 'directory') subs.push(h); else if (isPhotoName(h.name)) loose++;
     }
     subs.sort((a, b) => a.name.localeCompare(b.name, 'ja', { numeric: true }));
     toast('写真を読み込んでいます…');
-    const done = []; let made = 0; let skipped = 0;
+    // フォルダごとに、写真と、いちばん合う記事を決める
+    const cands = [];
     for (const sub of subs) {
       const files = [];
-      for await (const h of sub.values()) if (h.kind === 'file' && isPhotoName(h.name)) files.push(h);
+      for await (const h of sub.values()) if (h.kind === 'file' && isPhotoName(h.name)) files.push(await h.getFile());
       if (!files.length) continue;
-      files.sort((a, b) => a.name.localeCompare(b.name, 'ja', { numeric: true }));
-      let si = d.sections.findIndex((x) => normName(x.title) && normName(x.title) === normName(sub.name));
-      if (si < 0) { d.sections.push({ title: sub.name, fontSize: 11, paragraphs: [] }); si = d.sections.length - 1; made++; }
+      let si = -1; let score = 0;
+      d.sections.forEach((x, i) => { const sc = folderScore(x.title, sub.name); if (sc > score) { score = sc; si = i; } });
+      cands.push({ sub, files, si, score, newest: Math.max(...files.map((f) => f.lastModified || 0)) });
+    }
+    // 1つの記事に合うフォルダが2つ以上あるとき（「春の遠足」と「秋の遠足」→「遠足に行ってきました」）は、
+    // よく合うほう、同じくらいなら写真の新しいほうのフォルダを使う
+    const unmatched = []; const older = []; const use = new Map();
+    for (const c of cands) {
+      if (c.si < 0) { unmatched.push(`「${c.sub.name}」`); continue; }
+      const cur = use.get(c.si);
+      if (!cur || c.score > cur.score || (c.score === cur.score && c.newest > cur.newest)) { if (cur) older.push(cur); use.set(c.si, c); } else older.push(c);
+    }
+    const done = []; let skipped = 0;
+    for (const [si, c] of use) {
       const sec = d.sections[si]; sec.photos = sec.photos || [];
       const have = new Set(sec.photos.map((id) => photoMeta.get(id) && photoMeta.get(id).src).filter(Boolean));
+      c.files.sort((a, b) => a.name.localeCompare(b.name, 'ja', { numeric: true }));
       let n = 0;
-      for (const fh of files) {
+      for (const f of c.files) {
         try {
-          const f = await fh.getFile();
-          const src = `${m}/${sub.name}/${f.name}/${f.size}/${f.lastModified}`;
+          const src = `${c.sub.name}/${f.name}/${f.size}/${f.lastModified}`;
           if (have.has(src)) { skipped++; continue; }
           const rec = await preparePhoto(f); rec.src = src;
           await putPhoto(rec); addMeta(rec); sec.photos.push(rec.id); have.add(src); n++;
         } catch (e) { toast(e.message || String(e)); }
       }
-      if (n) done.push(`「${sub.name}」${n}枚`);
+      if (n) done.push(`「${c.sub.name}」→「${sec.title}」${n}枚`);
     }
     changed(); renderPanel();
     const msg = [];
     msg.push(done.length ? `写真を入れました：${done.join('、')}` : '新しく入れる写真はありませんでした');
-    if (made) msg.push(`見出しが同じ記事がなかったので、記事を${made}つ作りました`);
+    if (unmatched.length) msg.push(`${unmatched.join('')}は、合う見出しの記事がないので読んでいません（入れたいときは、見出しにフォルダの名前を入れてください）`);
+    if (older.length) msg.push(`${older.map((c) => `「${c.sub.name}」`).join('')}は、同じ記事に合うフォルダのうち写真が古いほうなので読んでいません`);
     if (skipped) msg.push(`前に読み込んだ写真${skipped}枚は入れていません`);
-    if (loose) msg.push(`「${monthDir.name}」フォルダに直接ある写真${loose}枚は、どの記事か分からないので入れていません（記事の名前のフォルダに入れてください）`);
+    if (loose) msg.push(`「${root.name}」フォルダに直接ある写真${loose}枚は、どの記事か分からないので入れていません（行事の名前のフォルダに入れてください）`);
     toast(msg.join('。') + '。');
   } catch (e) {
     toast(`フォルダを読めませんでした（${e && e.name || e}）。学校のパソコンの設定で止められているかもしれません。`);
