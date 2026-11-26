@@ -2,7 +2,7 @@
 // すべてこのブラウザの中で処理する（ファイルや写真をインターネットに送らない）。
 import {
   buildDocx, fileNameOf, measurePage1, choosePhotoLayout, weekdayOf, ILLUST_SIZE, LINE_CM, PAGE_BODY_HEIGHT_CM, headImagesOf,
-  fillIllustOf, seasonIllustOf, boxIllustOf, smallIllustsOf, fitInBox, PAGE, SEASON_ASPECT,
+  fillIllustOf, boxIllustOf, smallIllustsOf, fitInBox, PAGE,
 } from './lib/docx-builder.js';
 import { extractEvents, toNewsletterEvents } from './lib/events.js';
 import { renderPreview } from './lib/preview.js';
@@ -78,11 +78,11 @@ function newsletterData() {
   });
   // ロゴ：学年ごとに取り込んだもの（なければ最初から入っているもの。それもなければロゴなし）
   d.logo = logoOf(d.grade);
-  // 季節のイラスト：その月に取り込んだ絵があれば、1枚を下の空きに大きく、残りを小さく空いているところに置く（白黒）
+  // 季節のイラスト：その月の絵を、見出しの横・記事の終わり・下の空きに、ふつうの大きさで置く（白黒）
   lastPlacement = placeSeason(d);
   return d;
 }
-let lastPlacement = { fill: null, spots: [] };   // 画面に「どの絵をどこに置いたか」を出すため
+let lastPlacement = { spots: [], bottom: [] };   // 画面に「どの絵をどこに置いたか」を出すため
 function placeSeason(d) {
   // 1ページ目の行事予定の枠の下の絵（d.boxChoice：未指定＝その月の絵、'none'＝なし、または取り込んだ絵のID）
   const own = seasonPool(d.month);
@@ -95,7 +95,6 @@ function placeSeason(d) {
   } else d.eventsIllust = boxIllustOf(d.month);
   // 2ページ目：取り込んだ絵（枠の下に使った絵はのぞく）と、最初から入っている絵
   const pool = own.filter((id) => id !== d.eventsIllust).map((id) => { const m = illustMeta.get(id); return { id, aspect: m.width / m.height }; });
-  pool.push({ id: seasonIllustOf(d.month), aspect: SEASON_ASPECT, builtin: 'fill' });
   for (const id of smallIllustsOf(d.month)) pool.push({ id, aspect: 1, builtin: 'small' });
   const r = placeIllusts(d, pool, { photoAspectOf: (id) => photoMeta.get(id), illustAspectOf: (n) => illustSize(n) });
   if (own.includes(d.eventsIllust)) d.grayIllusts.push(d.eventsIllust);
@@ -181,16 +180,16 @@ const logoKey = (g) => `user-logo-g${g}`;
 const DEFAULT_LOGO = { 5: 'logo.png' };   // 最初から入っているロゴ（5年生の ONETEAM）。ほかの学年は、取り込むまでロゴなし
 function addIllustMeta(rec) {
   const old = illustMeta.get(rec.id); if (old) URL.revokeObjectURL(old.url);
-  illustMeta.set(rec.id, { width: rec.width, height: rec.height, name: rec.name, type: rec.type, addedAt: rec.addedAt || 0, url: URL.createObjectURL(rec.blob) });
+  illustMeta.set(rec.id, { width: rec.width, height: rec.height, name: rec.name, type: rec.type, addedAt: rec.addedAt || 0, src: rec.src, url: URL.createObjectURL(rec.blob) });
 }
 const urlOf = (n) => (illustMeta.has(n) ? illustMeta.get(n).url : ILLUST_DIR + n);
 const logoOf = (grade) => (illustMeta.has(logoKey(grade)) ? logoKey(grade) : DEFAULT_LOGO[grade] || null);
-async function setIllust(key, kind, file) {
+async function setIllust(key, kind, file, src) {
   if (!file) return false;
   if (!/^image\//.test(file.type) && !/\.(jpe?g|png|hei[cf])$/i.test(file.name)) { toast('画像のファイル（JPEGかPNG）を選んでください'); return false; }
   try {
     const rec = await preparePhoto(file, { keepPng: true, id: key });
-    rec.kind = kind;
+    rec.kind = kind; if (src) rec.src = src;
     await putPhoto(rec); addIllustMeta(rec);
     return true;
   } catch (e) { toast(e.message || String(e)); return false; }
@@ -523,8 +522,8 @@ const FOLDER_DB = 'gakunen-dayori-folder';
 function folderDb() {
   return new Promise((res, rej) => { const q = indexedDB.open(FOLDER_DB, 1); q.onupgradeneeded = () => q.result.createObjectStore('h'); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
 }
-async function folderGet() { try { const db = await folderDb(); return await new Promise((res) => { const g = db.transaction('h').objectStore('h').get('root'); g.onsuccess = () => res(g.result || null); g.onerror = () => res(null); }); } catch { return null; } }
-async function folderPut(h) { try { const db = await folderDb(); await new Promise((res) => { const t = db.transaction('h', 'readwrite'); t.objectStore('h').put(h, 'root'); t.oncomplete = res; t.onerror = res; }); } catch { /* 覚えられなくても、今回は使える */ } }
+async function folderGet(key = 'root') { try { const db = await folderDb(); return await new Promise((res) => { const g = db.transaction('h').objectStore('h').get(key); g.onsuccess = () => res(g.result || null); g.onerror = () => res(null); }); } catch { return null; } }
+async function folderPut(h, key = 'root') { try { const db = await folderDb(); await new Promise((res) => { const t = db.transaction('h', 'readwrite'); t.objectStore('h').put(h, key); t.oncomplete = res; t.onerror = res; }); } catch { /* 覚えられなくても、今回は使える */ } }
 let folderHandle = null;
 folderGet().then((h) => { if (h) { folderHandle = h; renderPanel(); } });
 
@@ -630,10 +629,9 @@ async function loadFromFolder() {
 function panelPage2() {
   newsletterData();   // 季節のイラストの置き場所（lastPlacement）を最新にする
   let h =`<h2>2ページ目の記事</h2><p class="help">改行すると新しい段落になります。下線を引きたいところは __このように__ 下線2本ずつではさみます。</p>
-  <p class="help">写真の入れ方：写真を開いて Ctrl＋C でコピーし、記事の下の「ここに Ctrl＋V で写真を貼り付け」の欄をクリックして Ctrl＋V（季節のイラスト・ロゴも同じ）。写真は、このパソコンのブラウザの中だけに保存します（インターネットには送りません）。Wordでは白黒になります。並べ替えは、写真をドラッグするか ← → で行えます。写真をタッチ（クリック）すると消せます（季節のイラストも同じ）。<b>毎月1日をすぎて最初にアプリを開いたとき、前の月までに入れた写真は自動で消えます</b>（ロゴ・季節のイラストは消えません）。</p>
-  <label class="help" style="display:block"><input type="checkbox" id="f-autofill" ${state.data.autoFill === false ? '' : 'checked'}> 2ページ目の下が大きく空いたときは、季節のイラストを入れる</label>
+  <p class="help">写真の入れ方：下の「📁 写真を読み込む」か、写真を開いて Ctrl＋C でコピーし、記事の下の欄をクリックして Ctrl＋V。写真は、このパソコンのブラウザの中だけに保存します（インターネットには送りません）。Wordでは白黒になります。並べ替えは、写真をドラッグするか ← → で行えます。写真をタッチ（クリック）すると消えます（イラストも同じ。まちがえて消したときは、もう一度「読み込む」を押せば戻ります）。<b>毎月1日をすぎて最初にアプリを開いたとき、前の月までに入れた写真は自動で消えます</b>（ロゴ・季節のイラストは消えません）。</p>
   ${folderCard()}
-  ${seasonCard()}`;
+  ${illustCard()}`;
   state.data.sections.forEach((s, i) => {
     const off = s.photoOff || [];
     const ids = s.photos || [];
@@ -661,73 +659,76 @@ function panelPage2() {
       ${used ? `<div class="photo-opts"><label>1行の枚数 <select data-sc="perRow" data-i="${i}">${[0, 1, 2, 3, 4, 5, 6].map((n) => `<option value="${n}" ${(s.perRow || 0) === n ? 'selected' : ''}>${n ? n + '枚' : '自動'}</option>`).join('')}</select></label>
       <label>写真の大きさ <select data-sc="photoSize" data-i="${i}">${[0.6, 0.7, 0.8, 0.9, 1, 1.15, 1.3, 1.5].map((n) => `<option value="${n}" ${(s.photoSize || 1) === n ? 'selected' : ''}>${n === 1 ? 'ふつう' : Math.round(n * 100) + '%'}</option>`).join('')}</select></label>
       <span class="help" style="margin:0">載せる写真：${used}枚</span></div>` : ''}
-      ${sectionIllustOpts(s, i)}</div>`;
+      </div>`;
   });
   return h + '<button id="btn-addsection">＋ 記事を足す</button>';
 }
 
 // 季節のイラスト（月ごとに何枚でも登録して、毎年その月に使う）
-let seasonOpen = false;   // 「ほかの月」を開いているか（画面を描き直しても閉じないように）
 /** その絵を今どこに置いているか（今月の分だけ） */
 function whereIs(id) {
   if (lastPlacement.box === id) return '1ページ目：行事予定の枠の下';
-  if (lastPlacement.fill === id) return state.data.autoFill === false ? '下の空き（今は入れない設定）' : '大きく：下の空き';
+  if ((lastPlacement.bottom || []).includes(id)) return '2ページ目の下の空き';
   const s = lastPlacement.spots.find((x) => x.id === id);
-  if (!s) return '使っていない';
+  if (!s) return '入る場所がない';
   const title = state.data.sections[s.si] && state.data.sections[s.si].title;
   return `小さく：「${title || '（見出しなし）'}」の${s.kind === 'title' ? '見出しの横' : '終わり'}`;
 }
-function seasonPoolHtml(m, current) {
-  const ids = seasonPool(m);
-  let h = `<div class="ill-pool ${current ? '' : 'mini'}">`;
-  ids.forEach((id, k) => {
-    const meta = illustMeta.get(id);
-    h += `<div class="ill-thumb"><span class="thumb-num">${k + 1}</span><img class="gray" src="${meta.url}" alt="${esc(meta.name)}" title="${esc(meta.name)}">
-      ${current ? `<span class="ill-where">${esc(whereIs(id))}</span>` : ''}
-      <button class="small ill-x" data-ill-del="season" data-id="${id}" data-m="${m}" title="この絵を消す">×</button></div>`;
-  });
-  h += `${ids.length ? '' : '<span class="help" style="margin:0">まだ入れていません</span>'}</div>`;
-  h += pasteBox('season', m, '絵');
-  if (current) {
-    // アプリに最初から入っている絵（消せない。使わないときは、置き場所の選択で「なし」や別の絵にする）
-    const builtins = [seasonIllustOf(m), ...smallIllustsOf(m)];
-    h += `<div class="help" style="margin:8px 0 2px">最初から入っている絵（このアプリのために描いた絵）</div><div class="ill-pool builtin-pool">`
-      + builtins.map((id) => `<div class="ill-thumb builtin"><img src="${ILLUST_DIR + id}" alt="${esc(illLabel(m, id))}" title="${esc(illLabel(m, id))}"><span class="ill-where"><b>${esc(illLabel(m, id).replace('最初からある', ''))}</b><br>${esc(whereIs(id))}</span></div>`).join('')
-      + `<div class="ill-thumb builtin"><img src="${ILLUST_DIR + boxIllustOf(m)}" alt="枠の下の絵"><span class="ill-where"><b>枠の下の絵</b><br>${whereIs(boxIllustOf(m))}</span></div></div>`;
-  }
-  return h;
-}
-function seasonCard() {
-  const d = state.data; const m = d.month;
-  const ids = seasonPool(m);
-  const others = [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3].filter((x) => x !== m);
-  const months = new Set([...illustMeta.keys()].map(monthOfIllust).filter(Boolean));
-  const usable = ids.filter((id) => id !== d.boxChoice);
-  const fc = d.fillChoice && (d.fillChoice === 'default' || usable.includes(d.fillChoice)) ? d.fillChoice : '';
-  const opt = (v, label) => `<option value="${v}" ${fc === v ? 'selected' : ''}>${label}</option>`;
-  const autoFill = usable.length ? illLabel(m, usable[0]) : '最初からある大きい絵';
-  return `<div class="card"><div class="card-head"><b>${m}月の季節のイラスト</b></div>
-    ${seasonPoolHtml(m, true)}
-    <div class="photo-opts"><label>下の空きに大きく入れる絵 <select id="f-fillchoice">${opt('', `自動（${autoFill}）`)}${usable.map((id) => opt(id, illLabel(m, id))).join('')}${opt('default', '最初からある大きい絵')}</select></label>
-      <label><input type="checkbox" id="f-builtinsmall" ${d.builtinSmall === false ? '' : 'checked'}> 最初からある小さい絵も、空いているところに置く</label></div>
-    <p class="help" style="margin:6px 0 0">取り込んだ絵は、毎年${m}月に使います。1枚を2ページ目の下の空きに大きく入れ、残りは小さくして、記事の「見出しの横」か「終わりの右」の空いているところに自動で置きます（取り込んだ絵が先、そのあとに最初からある小さい絵）。置き場所は、各記事の「イラスト」で変えられます。1ページ目の行事予定の枠の下の絵は、②行事予定のタブで選べます。
-    取り込んだ絵はこのブラウザの中だけに保存し（インターネットには送りません）、Wordでは白黒になります。</p>
-    <details id="season-more" ${seasonOpen ? 'open' : ''}><summary>ほかの月の絵も登録する（登録済み：${months.size - (months.has(m) ? 1 : 0)}か月）</summary>
-    <div class="season-months">${others.map((x) => `<div class="season-month"><b>${x}月</b>${seasonPoolHtml(x, false)}</div>`).join('')}</div></details></div>`;
-}
-/** 記事ごとの「イラスト」の選びなおし（取り込んだ絵と、最初からある小さい絵から選ぶ） */
-function sectionIllustOpts(sec, i) {
+// 「学年だよりイラスト」＞「〇月」フォルダから、その月のイラストを読み込む（写真のフォルダとは別に覚える）
+let illustFolderHandle = null;
+folderGet('illust').then((h) => { if (h) { illustFolderHandle = h; renderPanel(); } });
+const monthOfFolder = (name) => { const r = /^0?(\d{1,2})月?$/.exec(normName(name)); return r ? Number(r[1]) : 0; };
+function illustCard() {
   const m = state.data.month;
-  const ids = [...seasonPool(m).filter((id) => id !== state.data.boxChoice), ...smallIllustsOf(m)];
-  const sel = (kind, key) => {
-    const auto = lastPlacement.spots.find((s) => s.si === i && s.kind === kind && s.auto);
-    const v = sec[key] === 'none' || ids.includes(sec[key]) ? sec[key] : '';
-    const o = (val, label) => `<option value="${val}" ${v === val ? 'selected' : ''}>${label}</option>`;
-    return `<select data-sc="${key}" data-i="${i}">${o('', `自動（${auto ? illLabel(m, auto.id) : 'なし'}）`)}${o('none', 'なし')}${ids.map((id) => o(id, illLabel(m, id))).join('')}</select>`;
-  };
-  return `<div class="photo-opts"><span>イラスト</span><label>見出しの横 ${sel('title', 'illTitle')}</label><label>終わりの右 ${sel('end', 'illEnd')}</label></div>`;
+  const ids = seasonPool(m);
+  return `<div class="card"><div class="card-head"><b>🎨 ${m}月のイラスト</b></div>
+    <div class="adder" style="margin:6px 0 0">${illustFolderHandle
+      ? `<button id="btn-ill-load">イラストを読み込む</button><button id="btn-ill-pick" class="small">フォルダを選び直す</button><span class="help" style="margin:0">読み込むフォルダ：「${esc(illustFolderHandle.name)}」</span>`
+      : '<button id="btn-ill-pick">フォルダを選ぶ（最初の1回）</button>'}</div>
+    <div class="ill-pool" style="margin-top:6px">${ids.map((id, k) => { const meta = illustMeta.get(id);
+      return `<div class="ill-thumb"><span class="thumb-num">${k + 1}</span><img class="gray" src="${meta.url}" alt="${esc(meta.name)}" title="${esc(meta.name)}"><span class="ill-where">${esc(whereIs(id))}</span>
+        <button class="small ill-x" data-ill-del="season" data-id="${id}" data-m="${m}" title="この絵を消す">×</button></div>`; }).join('')
+      || '<span class="help" style="margin:0">まだ読み込んでいません（最初から入っている小さい絵を使います）</span>'}</div>
+    <p class="help" style="margin:6px 0 0">デスクトップなどに「学年だよりイラスト」フォルダを作り、その中に「${m}月」フォルダを作って絵を入れます。ボタンを押すと、2ページ目の空いているところ（見出しの横・記事の終わり・下の空き）に、ふつうの大きさで自動で入ります。絵をタッチすると消えます（まちがえたときは、もう一度「イラストを読み込む」）。絵はこのブラウザの中だけに保存し、毎年${m}月に使います。Wordでは白黒になります。</p></div>`;
 }
-
+async function pickIllustFolder() {
+  if (!window.showDirectoryPicker) { toast('このブラウザでは、フォルダを選ぶ機能が使えません（Edge か Chrome で開いてください）。'); return; }
+  let h;
+  try { h = await window.showDirectoryPicker({ id: 'gakunen-dayori-illust', mode: 'read' }); }
+  catch (e) { if (!(e && e.name === 'AbortError')) toast(`フォルダを選べませんでした（${e && e.name || e}）`); return; }
+  illustFolderHandle = h; await folderPut(h, 'illust'); renderPanel();
+  await loadIllustFolder();
+}
+async function loadIllustFolder() {
+  const root = illustFolderHandle; if (!root) return;
+  const m = state.data.month;
+  try {
+    if ((await root.queryPermission({ mode: 'read' })) !== 'granted' && (await root.requestPermission({ mode: 'read' })) !== 'granted') {
+      toast('フォルダを見る許可がもらえませんでした。もう一度押して「許可」を選んでください。'); return;
+    }
+  } catch { /* 許可を聞けないブラウザでは、そのまま読んでみる */ }
+  try {
+    // 選んだフォルダが「12月」フォルダそのものなら、それを使う。ちがえば、その中の「12月」フォルダを探す
+    let dir = monthOfFolder(root.name) === m ? root : null;
+    if (!dir) for await (const h of root.values()) if (h.kind === 'directory' && monthOfFolder(h.name) === m) { dir = h; break; }
+    if (!dir) { toast(`「${root.name}」フォルダの中に「${m}月」のフォルダが見つかりませんでした。`); return; }
+    const files = [];
+    for await (const h of dir.values()) if (h.kind === 'file' && /\.(jpe?g|png)$/i.test(h.name)) files.push(await h.getFile());
+    files.sort((a, b) => a.name.localeCompare(b.name, 'ja', { numeric: true }));
+    // 一度入れた絵（同じファイル）は二度入れない。消した絵は、もう一度読み込むと戻る
+    const have = new Set(seasonPool(m).map((id) => illustMeta.get(id).src).filter(Boolean));
+    let n = 0; let skipped = 0;
+    for (const f of files) {
+      const src = `${m}/${f.name}/${f.size}/${f.lastModified}`;
+      if (have.has(src)) { skipped++; continue; }
+      if (await setIllust(newSeasonId(m), 'season', f, src)) { have.add(src); n++; }
+    }
+    changed(); renderPanel();
+    toast(n ? `${m}月のイラストを${n}枚入れました${skipped ? `（前に入れた${skipped}枚はそのまま）` : ''}。` : files.length ? '新しく入れるイラストはありませんでした。' : `「${dir.name}」フォルダに絵（JPG・PNG）がありませんでした。`);
+  } catch (e) {
+    toast(`フォルダを読めませんでした（${e && e.name || e}）。学校のパソコンの設定で止められているかもしれません。`);
+  }
+}
 // ---------- 入力の受け取り ----------
 const lines = (v) => v.split(/\r?\n/).map((s) => s.trimEnd()).filter((s) => s.trim() !== '');
 const move = (arr, i, dir) => { const j = i + dir; if (j < 0 || j >= arr.length) return; [arr[i], arr[j]] = [arr[j], arr[i]]; };
@@ -777,19 +778,15 @@ $('#panel').addEventListener('change', async (e) => {
   if (t.dataset.cu === 'lines') { renderPanel(); return; }   // 書き終えたら「直した」の印を出し直す
   if (t.dataset.ev === 'include') { state.eventDays[t.dataset.d].items[i].include = t.checked; changed(); renderPanel(); return; }
   if (t.dataset.sc === 'fontSize') { d.sections[i].fontSize = Number(t.value); changed(); }
-  if (t.id === 'f-autofill') { d.autoFill = t.checked; changed(); return; }
   if (t.dataset.sc === 'perRow') { d.sections[i].perRow = Number(t.value) || undefined; changed(); }
   if (t.dataset.sc === 'photoSize') { d.sections[i].photoSize = Number(t.value); changed(); }
   if (t.id === 'f-boxchoice') { if (t.value) d.boxChoice = t.value; else delete d.boxChoice; changed(); renderPanel(); return; }
-  if (t.id === 'f-builtinsmall') { d.builtinSmall = t.checked; changed(); renderPanel(); return; }
-  if (t.id === 'f-fillchoice') { if (t.value) d.fillChoice = t.value; else delete d.fillChoice; changed(); renderPanel(); }
   if (t.dataset.sc === 'illTitle' || t.dataset.sc === 'illEnd') {
     const sec = d.sections[i]; if (t.value) sec[t.dataset.sc] = t.value; else delete sec[t.dataset.sc];
     changed(); renderPanel();
   }
 });
 $('#panel').addEventListener('toggle', (e) => {
-  if (e.target.id === 'season-more') seasonOpen = e.target.open;
   const t = e.target.dataset && e.target.dataset.aiBox;
   if (t !== undefined) { if (e.target.open) aiOpen.add(t); else aiOpen.delete(t); }
 }, true);
@@ -815,17 +812,15 @@ async function removeIllustOf(kind, month, id) {
     if (!confirm(DEFAULT_LOGO[d.grade] ? `${d.grade}年生のロゴを、最初のロゴに戻しますか？` : `${d.grade}年生のロゴを外しますか？（ロゴなしになります）`)) return;
     await removeIllust(logoKey(d.grade));
   } else {
-    if (!confirm(`${month}月の季節のイラストの「${illLabel(month, id)}」を消しますか？（このブラウザから消えます）`)) return;
-    await removeIllust(id);
+    await removeIllust(id);   // 確認は出さない。まちがえて消したときは「イラストを読み込む」で戻る
     // この絵を選んでいたところは「自動」に戻す
-    if (d.fillChoice === id) delete d.fillChoice;
     if (d.boxChoice === id) delete d.boxChoice;
     for (const s of d.sections) { if (s.illTitle === id) delete s.illTitle; if (s.illEnd === id) delete s.illEnd; }
   }
   changed(); renderPanel();
 }
 
-// 写真・季節のイラストをタッチ（クリック）で消す（×ボタンと同じ。消す前に確かめる）
+// 写真・季節のイラストをタッチ（クリック）で消す（×ボタンと同じ。確認は出さない）
 // 並べ替えのドラッグのあとは、ブラウザがクリックを出さないので、ぶつからない
 $('#panel').addEventListener('click', (e) => {
   const el = e.target.closest && e.target.closest('.thumb, .ill-thumb'); if (!el || e.target.closest('button')) return;
@@ -971,6 +966,8 @@ $('#panel').addEventListener('click', async (e) => {
   if (e.target.id === 'btn-curclip') { await readClipboardTable(); return; }
   if (e.target.id === 'btn-folder-pick') { await pickFolder(); return; }
   if (e.target.id === 'btn-folder-load') { await loadFromFolder(); return; }
+  if (e.target.id === 'btn-ill-pick') { await pickIllustFolder(); return; }
+  if (e.target.id === 'btn-ill-load') { await loadIllustFolder(); return; }
   const t = e.target.closest('button'); if (!t) return;
   if (t.dataset.clipKind) { await readClipboardImages(t.dataset.clipKind, Number(t.dataset.n)); return; }
   const d = state.data; const i = Number(t.dataset.i);
@@ -1008,7 +1005,7 @@ $('#panel').addEventListener('click', async (e) => {
       const off = s.photoOff || [];
       s.photoOff = off.includes(id) ? off.filter((x) => x !== id) : [...off, id];
     } else if (t.dataset.ph === 'del') {
-      if (!confirm('この写真を消しますか？（このブラウザからも消えます）')) return;
+      // 確認は出さない（先生の希望）。まちがえて消したときは、フォルダからもう一度読み込めば戻る
       s.photos.splice(k, 1); s.photoOff = (s.photoOff || []).filter((x) => x !== id); await removePhotos([id]);
     }
   } else return;
@@ -1070,7 +1067,7 @@ function updatePreview() {
   const c = checkFit(d);
   const lineMsg = (room) => (room >= 0 ? `あと約${Math.floor(room / LINE_CM)}行` : `約${Math.ceil(-room / LINE_CM)}行はみ出しています`);
   $('#fit').innerHTML = `<span class="badge ${c.room1 >= 0 ? 'ok' : 'ng'}">1ページ目：${c.room1 >= 0 ? '収まっています' : 'はみ出しています'}（${lineMsg(c.room1)}）</span>`
-    + `<span class="badge ${c.fit.fits ? 'ok' : 'ng'}">2ページ目：${c.fit.fits ? '収まっています' : 'はみ出しています'}（${c.fill ? '下の空きは季節のイラストで埋めています' : lineMsg(c.room2)}）</span>`
+    + `<span class="badge ${c.fit.fits ? 'ok' : 'ng'}">2ページ目：${c.fit.fits ? '収まっています' : 'はみ出しています'}（${c.fill ? '下の空きにイラストを並べています' : lineMsg(c.room2)}）</span>`
     + (c.p1.learningScale < 1 ? `<span class="badge info">1ページ目に収めるため、学習予定の文字を${Math.round(c.p1.learningScale * 100)}%の大きさにしています</span>` : '')
     + (c.room1 < 0 ? '<span class="badge ng">あいさつ・行事・学習予定のどれかを短くしてください</span>' : '')
     + (!c.fit.fits ? `<span class="badge ng">${d.sections.some((s) => s.perRow || (s.photoSize || 1) > 1)
@@ -1117,7 +1114,7 @@ $('#btn-word').addEventListener('click', async () => {
   const btn = $('#btn-word'); btn.disabled = true; btn.textContent = '作っています…';
   try {
     const heads = headImagesOf(d.month);
-    const names = new Set([...BASE_ILLUST, heads.events, heads.learning, d.eventsIllust, d.logo, d.fillIllust || seasonIllustOf(d.month),
+    const names = new Set([...BASE_ILLUST, heads.events, heads.learning, d.eventsIllust, d.logo, ...(d.bottomIllusts || []),
       ...d.sections.flatMap((s) => [s.titleIllust, s.endIllust])].filter(Boolean));
     // 先生が取り込んだロゴ・季節のイラストは、ブラウザの中から読む（それ以外はアプリの素材）
     const own = [...names].filter((n) => illustMeta.has(n));
