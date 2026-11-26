@@ -72,5 +72,97 @@
   }
   const flipKey = (cls, j) => `${cls.name}|${j}|${cls.raws[j]}`;
 
-  root.JikanwariCore = { SLOTS, convCell, readIdea, cellText, flipKey };
+  // ---- 先生の行 ----
+  // 教科の記号（先生の行に書く1字）。図書は「書」で選ぶが、書くときは学級だけ（図書の先生は専科の書き方）
+  const CODE = { '国語': '国', '算数': '算', '理科': '理', '社会': '社', '体育': '体', '音楽': '音', '図工': '図', '家庭': '家', '外国語': '外', '生活': '生', '総合': '総', '図書': '書', '道徳': '道', '特活': '特', 'クラブ': 'ク', '書写': '習' };
+  const CODE_NAME = { 国: '国語', 算: '算数', 理: '理科', 社: '社会', 体: '体育', 音: '音楽', 図: '図工', 家: '家庭', 外: '外国語', 生: '生活', 総: '総合', 書: '図書', 道: '道徳', 特: '特活', ク: 'クラブ', 習: '書写' };
+  const codeOf = (s) => CODE[s] || s;
+  const gradeOf = (name) => (/^(\d+)/.exec(name) || [])[1] || name;
+  const FW = (s) => s.replace(/[0-9]/g, (d) => String.fromCharCode(d.charCodeAt(0) + 0xFEE0)).replace(/-/g, '－');
+
+  // あるマスで、そのクラスがする授業（[{code, half}]。half：0＝まるごと、1＝前半、2＝後半）
+  function lessonsAt(cls, j, flips) {
+    const v = cellText(cls, j, flips); if (!v) return [];
+    if (cls.cells[j].pair) return v.split('/').map((s, k) => ({ code: codeOf(s), half: k + 1 }));
+    return [{ code: codeOf(v), half: 0 }];
+  }
+  // txtにある（クラス・教科）と、その授業名（イデアの名前）
+  function subjectsIn(t, flips) {
+    const codes = [], names = {};
+    t.classes.forEach((c) => t.labels.forEach((_, j) => lessonsAt(c, j, flips).forEach(({ code }) => {
+      if (!codes.includes(code)) codes.push(code);
+      const k = `${c.name}|${code}`; (names[k] = names[k] || new Set()).add(c.raws[j]);
+    })));
+    const order = Object.keys(CODE_NAME);
+    codes.sort((a, b) => (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99));
+    return { codes, names };
+  }
+  // 決まった予定の「火2 金1」を、マスの番号に
+  function slotsOf(t, s) {
+    const out = [];
+    for (const m of String(s || '').normalize('NFKC').matchAll(/(月|火|水|木|金)\s*(\d)/g)) { const j = t.labels.indexOf(m[1] + m[2]); if (j >= 0) out.push(j); }
+    return out;
+  }
+  // 先生1人の行（29マス）を作る
+  // teacher = { label, picks: ['4-1|理', ...], excl: ['2年音楽 (音楽 )', ...], noSubj: 専科の書き方（学級だけ）, fixed: [{ slots: '火2 金1', text: '支援担会議' }] }
+  function teacherRow(t, teacher, flips) {
+    const picks = new Set(teacher.picks || []), excl = new Set(teacher.excl || []);
+    const fixed = {}; (teacher.fixed || []).forEach((f) => { if (f.text) slotsOf(t, f.slots).forEach((j) => { fixed[j] = f.text; }); });
+    const byGrade = {}; t.classes.forEach((c) => { (byGrade[gradeOf(c.name)] = byGrade[gradeOf(c.name)] || []).push(c.name); });
+    return t.labels.map((_, j) => {
+      const whole = [], halves = [[], []]; // whole：[{cls, code, raw}]
+      t.classes.forEach((c) => {
+        if (excl.has(c.raws[j])) return;
+        lessonsAt(c, j, flips).forEach(({ code, half }) => {
+          if (!picks.has(`${c.name}|${code}`)) return;
+          if (half) halves[half - 1].push({ cls: c.name, code }); else whole.push({ cls: c.name, code, raw: c.raws[j] });
+        });
+      });
+      const subj = (code) => teacher.noSubj ? '' : (code === '書' ? '図書' : code);
+      const parts = [];
+      // まるごとの授業：同じ授業名・同じ教科ごとにまとめ、学年の全部のクラスなら「５年算」、2学年いっしょなら「1,2年国」
+      const groups = [];
+      whole.forEach((w) => { let g = groups.find((x) => x.code === w.code && x.raw === w.raw); if (!g) groups.push(g = { code: w.code, raw: w.raw, cls: [] }); g.cls.push(w.cls); });
+      groups.forEach((g) => {
+        const fullGrades = Object.keys(byGrade).filter((gr) => byGrade[gr].length > 1 && byGrade[gr].every((n) => g.cls.includes(n)));
+        const rest = g.cls.filter((n) => !fullGrades.includes(gradeOf(n)));
+        if (fullGrades.length > 1) parts.push(`${fullGrades.join(',')}年${subj(g.code)}`);
+        else if (fullGrades.length === 1) parts.push(FW(`${fullGrades[0]}年`) + subj(g.code));
+        rest.forEach((n) => parts.push(FW(n) + subj(g.code)));
+      });
+      if (halves[0].length || halves[1].length) parts.push(halves.map((h) => h.map((x) => x.cls + subj(x.code)).join('・')).join('/'));
+      if (fixed[j]) parts.push(fixed[j]);
+      return parts.join('・');
+    });
+  }
+
+  // はじめの先生の行（2026年度の時間割の一覧表と同じ。名前は入れない）。sel：学年（'4'）かクラス（'6-1'）→ 教科の記号
+  const MEETING = [{ slots: '火2 金1', text: '支援担会議' }];
+  const PRESET = [
+    { label: '支援①', sel: { 4: '理算', 5: '理算' }, fixed: MEETING },
+    { label: '支援②', sel: { 1: '国図', 2: '国図' }, fixed: MEETING },
+    { label: '支援③', sel: { 4: '国社', 5: '国社' }, fixed: MEETING },
+    { label: '支援④', sel: { 2: '体算', 3: '理算' }, fixed: MEETING },
+    { label: '支援⑤', sel: { 3: '国社', '6-1': '国社', '6-2': '国社' }, fixed: MEETING },
+    { label: '支援⑥', sel: { 1: '体算', 6: '算', '6-1': '理', '6-2': '理' }, fixed: MEETING },
+    { label: '支援員', sel: {} },
+    { label: '首席', sel: { 4: '算', 6: '理' } },
+    { label: '音楽', sel: { 2: '音', 3: '音', 4: '音', 5: '音', 6: '音' }, noSubj: true, excl: ['2年音楽 (音楽 )'] },
+    { label: '理専', sel: { 4: '理', 5: '理算' } },
+    { label: '軽減', sel: { 3: '理' } },
+    { label: '外国語', sel: { 5: '外', 6: '外' }, noSubj: true },
+    { label: '図書', sel: { 1: '書', 2: '書', 3: '書', 4: '書', 5: '書', 6: '書' }, noSubj: true },
+  ];
+  // sel を、いまのtxtのクラスで picks（'4-1|理'）にする
+  function expandSel(t, sel) {
+    const picks = [];
+    for (const [k, codes] of Object.entries(sel || {})) {
+      const names = t.classes.map((c) => c.name).filter((n) => n === k || gradeOf(n) === k);
+      for (const n of names) for (const code of codes) picks.push(`${n}|${code}`);
+    }
+    return picks;
+  }
+  const presetTeachers = (t) => PRESET.map((p) => ({ label: p.label, picks: expandSel(t, p.sel), excl: p.excl || [], noSubj: !!p.noSubj, fixed: (p.fixed || []).map((f) => ({ ...f })) }));
+
+  root.JikanwariCore = { SLOTS, convCell, readIdea, cellText, flipKey, CODE_NAME, subjectsIn, teacherRow, gradeOf, presetTeachers };
 })(typeof window !== 'undefined' ? window : globalThis);

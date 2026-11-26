@@ -163,7 +163,124 @@
       $('how').innerHTML = '<li>スプレッドシートの貼りたいタブの <b>A1</b> をクリックして <b>Ctrl + V</b>（txtの並びのまま入ります）</li>';
     }
     $('delim').addEventListener('change', (e) => { s.delim = e.target.value; render(); });
+    renderTeachers();
   }
+
+  // ---- 先生の行 ----
+  const TKEY = 'jikanwari-teachers';
+  let teachers = null; try { teachers = JSON.parse(localStorage.getItem(TKEY) || 'null'); } catch { teachers = null; }
+  const saveT = () => { try { localStorage.setItem(TKEY, JSON.stringify(teachers)); } catch { /* 覚えられなくても今回は使える */ } };
+  let openT = -1;
+  const { CODE_NAME, subjectsIn, teacherRow, gradeOf, presetTeachers } = window.JikanwariCore;
+
+  function summary(te) {
+    const by = {};
+    (te.picks || []).forEach((p) => { const [n, code] = p.split('|'); (by[code] = by[code] || []).push(n); });
+    if (!idea) return '';
+    const grades = {}; idea.classes.forEach((c) => { (grades[gradeOf(c.name)] = grades[gradeOf(c.name)] || []).push(c.name); });
+    const out = Object.entries(by).map(([code, ns]) => {
+      const parts = Object.entries(grades).flatMap(([g, all]) => { const mine = all.filter((n) => ns.includes(n)); return !mine.length ? [] : mine.length === all.length ? [`${g}年`] : mine; });
+      return `${CODE_NAME[code] || code}（${parts.join('・')}）`;
+    });
+    const fx = (te.fixed || []).filter((f) => f.text).map((f) => `${f.slots} ${f.text}`);
+    return [...out, ...fx].join('　') || '（まだ選んでいません）';
+  }
+
+  function editor(te, i, subs) {
+    const picks = new Set(te.picks || []);
+    let prevG = null;
+    const classHead = idea.classes.map((c) => { const g = gradeOf(c.name), sep = g !== prevG; prevG = g; return `<th class="${sep ? 'gsep' : ''}">${esc(c.name)}</th>`; }).join('');
+    const rows = subs.codes.map((code) => {
+      prevG = null;
+      return `<tr><th class="subj" data-act="row" data-code="${esc(code)}" title="押すと、この教科をまとめて選ぶ・はずす">${esc(CODE_NAME[code] || code)}</th>${idea.classes.map((c) => {
+        const g = gradeOf(c.name), sep = g !== prevG; prevG = g;
+        const k = `${c.name}|${code}`, has = subs.names[k];
+        return `<td class="${sep ? 'gsep' : ''} ${has ? '' : 'none'}">${has ? `<input type="checkbox" data-act="pick" data-k="${esc(k)}"${picks.has(k) ? ' checked' : ''}>` : ''}</td>`;
+      }).join('')}</tr>`;
+    }).join('');
+    // 選んだクラス・教科にある授業名（イデアの名前）。はずすと、その授業は入れない
+    const names = [...new Set([...picks].flatMap((k) => [...(subs.names[k] || [])]))].sort((a, b) => a.localeCompare(b, 'ja', { numeric: true }));
+    const excl = new Set(te.excl || []);
+    const fixed = (te.fixed && te.fixed.length ? te.fixed : [{ slots: '', text: '' }]);
+    return `<div class="body" data-i="${i}">
+      <div class="row">A列の名前 <input type="text" data-act="label" value="${esc(te.label || '')}" style="width:8em">
+        <label><input type="checkbox" data-act="noSubj"${te.noSubj ? ' checked' : ''}> 教科を書かない（音楽・外国語・図書など：「４－１」とだけ書く）</label></div>
+      <div class="tablewrap" style="max-height:none"><table class="pick"><thead><tr><th>教科＼クラス</th>${classHead}</tr></thead><tbody>${rows}</tbody></table></div>
+      <p class="help">灰色はそのクラスにない教科です。教科の名前を押すと、全部のクラスをまとめて選べます。</p>
+      ${names.length ? `<div class="excl"><span class="help">入れる授業（イデアの授業名。担任がする授業などは、はずす）：</span><br>${names.map((n) => `<label><input type="checkbox" data-act="excl" data-n="${esc(n)}"${excl.has(n) ? '' : ' checked'}> ${esc(n)}</label>`).join('')}</div>` : ''}
+      ${fixed.map((f, fi) => `<div class="row">決まった予定 <input type="text" data-act="fslots" data-f="${fi}" value="${esc(f.slots || '')}" placeholder="例：火2 金1" style="width:8em"> に <input type="text" data-act="ftext" data-f="${fi}" value="${esc(f.text || '')}" placeholder="例：支援担会議" style="width:10em"> と書く</div>`).join('')}
+      <div class="row"><button class="mini" data-act="fadd">＋ 決まった予定を足す</button><button class="mini" data-act="up">↑ 上へ</button><button class="mini" data-act="down">↓ 下へ</button><button class="mini" data-act="del">この先生を消す</button></div>
+    </div>`;
+  }
+
+  function renderTeachers() {
+    $('s4').classList.toggle('off', !idea); $('tCopy').disabled = !idea;
+    if (!idea) { $('teachers').innerHTML = '<p class="help">先にクラスの時間割のtxtを読み込んでください。</p>'; $('tPreview').innerHTML = ''; $('tHow').innerHTML = ''; return; }
+    if (!teachers) { teachers = presetTeachers(idea); saveT(); }
+    const subs = subjectsIn(idea, flips);
+    $('teachers').innerHTML = teachers.map((te, i) => `<details class="tcard" data-i="${i}"${i === openT ? ' open' : ''}><summary><b>${esc(te.label || '（名前なし）')}</b><span class="sum">${esc(summary(te))}</span></summary>${i === openT ? editor(te, i, subs) : ''}</details>`).join('');
+    renderPreview();
+  }
+  function renderPreview() {
+    if (!idea) return;
+    const { SLOTS } = window.JikanwariCore;
+    const starts = new Set(); let x = 0; for (const [, n] of SLOTS) { starts.add(x); x += n; }
+    const h1 = `<tr><th rowspan="2"></th>${SLOTS.map(([d, n]) => `<th colspan="${n}" class="dsep">${d}</th>`).join('')}</tr>`;
+    const h2 = `<tr>${SLOTS.map(([, n]) => Array.from({ length: n }, (_, k) => `<th class="${k ? '' : 'dsep'}">${k + 1}</th>`).join('')).join('')}</tr>`;
+    const body = teachers.map((te) => `<tr><th>${esc(te.label || '')}</th>${teacherRow(idea, te, flips).map((v, j) => `<td class="${starts.has(j) ? 'dsep' : ''}">${esc(v)}</td>`).join('')}</tr>`).join('');
+    $('tPreview').innerHTML = `<div class="tablewrap"><table class="raw tt2"><thead>${h1}${h2}</thead><tbody>${body}</tbody></table></div>`;
+    const first = 3 + idea.classes.length;
+    $('tHow').innerHTML = `<li>一覧表のA列の先生の並びが <b>${teachers.map((te) => esc(te.label || '（名前なし）')).join('・')}</b> と同じか確かめる（先生をふやしたときは、先に一覧表に行を足しておく）</li>
+      <li><b>C${first}</b> のマス（${esc(teachers[0] ? teachers[0].label : '')}の月曜1時間目）をクリックして <b>Ctrl + V</b></li>`;
+  }
+
+  // 先生の行の操作
+  $('teachers').addEventListener('toggle', (e) => {
+    const d = e.target; if (!d.classList || !d.classList.contains('tcard')) return;
+    const i = +d.dataset.i;
+    if (d.open && openT !== i) { openT = i; renderTeachers(); } else if (!d.open && openT === i) { openT = -1; renderTeachers(); }
+  }, true);
+  $('teachers').addEventListener('click', (e) => {
+    const el = e.target.closest('[data-act]'); if (!el) return;
+    const body = el.closest('.body'); if (!body) return;
+    const i = +body.dataset.i, te = teachers[i], act = el.dataset.act;
+    if (act === 'row') {
+      const code = el.dataset.code, subs = subjectsIn(idea, flips);
+      const ks = idea.classes.map((c) => `${c.name}|${code}`).filter((k) => subs.names[k]);
+      const all = ks.every((k) => te.picks.includes(k));
+      te.picks = all ? te.picks.filter((k) => !ks.includes(k)) : [...new Set([...te.picks, ...ks])];
+    } else if (act === 'fadd') { te.fixed = [...(te.fixed || []), { slots: '', text: '' }]; }
+    else if (act === 'up' && i > 0) { [teachers[i - 1], teachers[i]] = [teachers[i], teachers[i - 1]]; openT = i - 1; }
+    else if (act === 'down' && i < teachers.length - 1) { [teachers[i + 1], teachers[i]] = [teachers[i], teachers[i + 1]]; openT = i + 1; }
+    else if (act === 'del') { if (!confirm(`「${te.label || '名前なし'}」を消しますか？`)) return; teachers.splice(i, 1); openT = -1; }
+    else return;
+    saveT(); renderTeachers();
+  });
+  $('teachers').addEventListener('change', (e) => {
+    const el = e.target, act = el.dataset.act; if (!act) return;
+    const body = el.closest('.body'); const te = teachers[+body.dataset.i];
+    if (act === 'pick') { te.picks = el.checked ? [...new Set([...te.picks, el.dataset.k])] : te.picks.filter((k) => k !== el.dataset.k); }
+    else if (act === 'excl') { const n = el.dataset.n; te.excl = el.checked ? (te.excl || []).filter((x) => x !== n) : [...new Set([...(te.excl || []), n])]; }
+    else if (act === 'noSubj') te.noSubj = el.checked;
+    else return;
+    saveT(); renderTeachers();
+  });
+  $('teachers').addEventListener('input', (e) => {
+    const el = e.target, act = el.dataset.act; if (!['label', 'fslots', 'ftext'].includes(act)) return;
+    const body = el.closest('.body'); const te = teachers[+body.dataset.i];
+    if (act === 'label') { te.label = el.value; body.parentElement.querySelector('summary b').textContent = el.value || '（名前なし）'; }
+    else { te.fixed = te.fixed && te.fixed.length ? te.fixed : [{ slots: '', text: '' }]; te.fixed[+el.dataset.f][act === 'fslots' ? 'slots' : 'text'] = el.value; }
+    body.parentElement.querySelector('summary .sum').textContent = summary(te);
+    saveT(); renderPreview();
+  });
+  $('tAdd').addEventListener('click', () => { if (!idea) return; teachers.push({ label: '', picks: [], excl: [], noSubj: false, fixed: [] }); openT = teachers.length - 1; saveT(); renderTeachers(); });
+  $('tReset').addEventListener('click', () => { if (!idea || !confirm('先生の行を、はじめの設定（支援①〜⑥・支援員・首席・音楽・理専・軽減・外国語・図書）にもどしますか？')) return; teachers = presetTeachers(idea); openT = -1; saveT(); renderTeachers(); });
+  $('tCopy').addEventListener('click', async () => {
+    if (!idea) return;
+    const tsv = teachers.map((te) => teacherRow(idea, te, flips).join('\t')).join('\n');
+    try { await navigator.clipboard.writeText(tsv); $('tMsg').textContent = `コピーしました。一覧表の C${3 + idea.classes.length} で Ctrl + V`; }
+    catch { $('tMsg').textContent = 'コピーできませんでした。もう一度押してください'; }
+  });
   $('result').addEventListener('click', (e) => {
     const td = e.target.closest('td.split'); if (!td || !idea) return;
     const k = flipKey(idea.classes[+td.dataset.c], +td.dataset.j);
