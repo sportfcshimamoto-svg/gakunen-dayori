@@ -10,7 +10,8 @@
  *   し：週案の「宿題」の行
  *   持：月曜セット（次の日が次の週）・体そう服（次の日に体育）。先生が書き足したものは残す
  * 「連」「音」など、ほかの行はさわらない。
- * いちばん新しく直したほうが残る：週案が変わったマスだけ書き直す。連絡帳で手直ししたマスは、週案のその日が変わるまで残す。
+ * 連絡帳の手入力が優先：週案が変わったマスだけ書き直す。連絡帳で手直ししたマスは、週案が変わってもそのまま残す
+ * （週案の内容にもどすのは、メニュー「週案から自動入力」を押したときだけ）。
  * 週案を直すとすぐ（週案の「編集」のしかけ）、ほかに10分ごとにも見る（週案のメニューでタブを作ったときなど）。
  * 週案と連絡帳のほかに、データを送ることはない。
  */
@@ -447,9 +448,14 @@ function syncSheet_(sh, mon, ctx, force) {
         var auto = t[kind], last = memo[id];
         var now = String(at_(vals, k.textCol, r) || '');
         var next = now;
+        // 連絡帳で手入力したマス（前に自動で書いた文から変わっている）は、いつも手入力のまま。
+        // 週案の内容にもどすのは、メニュー「週案から自動入力」（force）のときだけ
+        var edited = last !== undefined && clean_(now) !== clean_(last);
         if (kind === '持') {
           var items = splitItems_(now), lastItems = splitItems_(last || '');
-          if (force || auto !== last) {
+          // 持ち物は、先生が書き足しただけなら手入力ではない（自動の分は直す）。自動で書いた物を消した・書きかえたときは手入力
+          if (!force && lastItems.some(function (x) { return items.indexOf(x) < 0; })) next = now;
+          else if (force || auto !== last) {
             var rest = items.filter(function (x) { return lastItems.indexOf(x) < 0; });
             var add = splitItems_(auto);
             // 何も消さず、足すものもすでに書いてあれば、先生の書き方（「、」など）のまま
@@ -457,6 +463,7 @@ function syncSheet_(sh, mon, ctx, force) {
             else next = add.concat(rest.filter(function (x) { return add.indexOf(x) < 0; })).join('・');
           }
         } else if (force) next = auto;
+        else if (edited) next = now;   // 手入力を残す
         else if (auto !== last) next = (last === undefined && now.trim()) || now.trim() === auto ? now : auto;   // はじめて見るマスで、もう何か書いてあれば残す
         if (force && now.trim() === auto) next = now;
         memo[id] = auto;
