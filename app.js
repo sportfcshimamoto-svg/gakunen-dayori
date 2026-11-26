@@ -12,7 +12,7 @@ import { extractCurriculumHtml } from './lib/curriculum-paste.js';
 import { greetingPrompt, sectionPrompt, cleanAiText, looksLikeNames, SECTION_KINDS } from './lib/ai-prompt.js';
 import { precheck } from './lib/precheck.js';
 import {
-  preparePhoto, putPhoto, getPhoto, deletePhoto, allPhotos, isPersistent, blobToBase64, base64ToBlob,
+  preparePhoto, putPhoto, getPhoto, deletePhoto, allPhotos, isPersistent,
 } from './lib/photo-store.js';
 
 const STORE_KEY = 'gakunen-dayori:v1';
@@ -52,7 +52,7 @@ function load() {
 let saveTimer = null;
 function save() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => { try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch { toast('ブラウザに保存できませんでした。「保存ファイルに書き出す」で保存してください。'); } }, 300);
+  saveTimer = setTimeout(() => { try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch { toast('ブラウザに保存できませんでした。ページを閉じると、入力した内容が消えることがあります。'); } }, 300);
 }
 function changed() { save(); schedulePreview(); }
 
@@ -129,7 +129,7 @@ async function removePhotos(ids) {
 }
 // ---------- 写真の自動削除（毎月1日） ----------
 // 新しい月になって最初にアプリを開いたとき、前の月までに入れた写真を、このブラウザから消す。
-// 消すのは記事の写真だけ（ロゴ・季節のイラストは消さない）。保存ファイルに書き出した写真は消えない。
+// 消すのは記事の写真だけ（ロゴ・季節のイラストは消さない）。
 const CLEAN_KEY = STORE_KEY + ':photoCleanMonth';
 async function monthlyPhotoCleanup(now = new Date()) {
   const ym = `${now.getFullYear()}-${now.getMonth() + 1}`;
@@ -225,7 +225,7 @@ function panelBasic() {
   <div class="field"><label for="f-month">何月号</label><select id="f-month" data-bind="month" data-num="1">${[4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3].map((n) => opt(n, d.month, '月号')).join('')}</select></div>
   <div class="field"><label for="f-date">発行日</label><input id="f-date" type="date" data-bind="issueDate" value="${esc(d.issueDate)}"></div>
   ${logoField(d.grade)}
-  <p class="help">入力した内容は、このブラウザに自動で保存されます。別のパソコンで続きをするときは、上の「保存ファイルに書き出す」を使ってください。</p>`;
+  <p class="help">入力した内容は、このブラウザに自動で保存されます（このパソコンのこのブラウザでだけ続きができます）。</p>`;
 }
 
 function logoField(grade) {
@@ -338,7 +338,7 @@ async function runExtract() {
 const CUR_KEY = 'gakunen-dayori:curriculum';
 let curriculum = (() => { try { return JSON.parse(localStorage.getItem(CUR_KEY)) || {}; } catch { return {}; } })();
 function saveCurriculum() {
-  try { localStorage.setItem(CUR_KEY, JSON.stringify(curriculum)); } catch { toast('カリキュラムをブラウザに保存できませんでした。「保存ファイルに書き出す」で保存してください。'); }
+  try { localStorage.setItem(CUR_KEY, JSON.stringify(curriculum)); } catch { toast('カリキュラムをブラウザに保存できませんでした。ページを閉じると消えることがあります。'); }
 }
 let curMonth = null;   // ⑥で表示している月（はじめは学年だよりの月）
 const sameLines = (a, b) => JSON.stringify(a || []) === JSON.stringify(b || []);
@@ -1141,76 +1141,10 @@ $('#btn-word').addEventListener('click', async () => {
   } finally { btn.disabled = false; btn.textContent = 'Wordファイルを作る'; }
 });
 
-// ---------- 保存ファイル（書き出し・読み込み）と作り直し ----------
-$('#btn-export').addEventListener('click', async () => {
-  const d = state.data;
-  const ids = allPhotoIds().filter((id) => photoMeta.has(id));
-  const withPhotos = ids.length > 0 && confirm(`写真（${ids.length}枚）も保存ファイルに入れますか？\n\nOK：写真も入れる（別のパソコンでも写真が使えます。ファイルが大きくなります。子どもの写真が入るので、ファイルの扱いに気をつけてください）\nキャンセル：文章だけ保存する`);
-  const out = { app: 'gakunen-dayori', ...state };
-  // カリキュラム、学年ごとのロゴと季節のイラストは、いつも入れる（子どもの写真ではないので確認しない）
-  out.curriculum = curriculum;
-  out.illustFiles = [];
-  for (const id of illustMeta.keys()) {
-    const rec = await getPhoto(id);
-    if (rec) out.illustFiles.push({ id, kind: rec.kind, name: rec.name, type: rec.type, width: rec.width, height: rec.height, addedAt: rec.addedAt, data: await blobToBase64(rec.blob) });
-  }
-  if (withPhotos) {
-    out.photoFiles = [];
-    for (const id of ids) { const rec = await getPhoto(id); if (rec) out.photoFiles.push({ id, name: rec.name, width: rec.width, height: rec.height, data: await blobToBase64(rec.blob) }); }
-  }
-  const url = URL.createObjectURL(new Blob([JSON.stringify(out, null, 1)], { type: 'application/json' }));
-  const link = document.createElement('a'); link.href = url; link.download = `学年だより_保存_${d.grade}年生_${d.month}月${withPhotos ? '_写真あり' : ''}.json`; link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 10000);
-});
-$('#file-import').addEventListener('change', async (e) => {
-  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
-  try {
-    const obj = JSON.parse(await f.text());
-    const s = newState();
-    if (obj.data) Object.assign(s, obj);
-    else { // 学年だよりの内容だけのファイル（テスト用データなど）
-      s.data = { ...s.data, ...obj };
-      s.eventDays = (obj.events || []).map((ev) => ({ day: ev.day, weekday: ev.weekday, items: [{ raw: '', text: ev.text, include: true, kind: 'event', reason: '', warn: '' }] }));
-      s.eventsFor = { grade: s.data.grade, month: s.data.month };
-    }
-    const photoFiles = obj.photoFiles || [];
-    const illustFiles = (obj.illustFiles || []).filter((p) => (SEASON_ID.test(p.id) || /^user-logo-g\d$/.test(p.id)) && p.data);
-    const curIn = obj.curriculum && typeof obj.curriculum === 'object' ? obj.curriculum : {};
-    const curGrades = Object.keys(curIn).filter((g) => curIn[g] && Array.isArray(curIn[g].subjects));
-    delete s.data.events; delete s.app; delete s.photoFiles; delete s.illustFiles; delete s.curriculum;
-    delete s.data.logo; delete s.data.fillIllust; delete s.data.fillAspect; delete s.data.fillGray; delete s.data.grayIllusts;
-    s.data.greeting = s.data.greeting || []; s.data.learning = s.data.learning || []; s.data.sections = s.data.sections || [];
-    // 写真の並べ方を細かく決めたデータ（テスト用）は、写真の順番だけを使う
-    s.data.sections.forEach((sec) => {
-      if (sec.photoRows) { sec.photos = [...(sec.photos || []), ...sec.photoRows.flat().filter((x) => x.photo).map((x) => x.photo)]; delete sec.photoRows; }
-    });
-    const extra = [photoFiles.length ? `写真${photoFiles.length}枚` : '', illustFiles.length ? `ロゴ・季節のイラスト${illustFiles.length}枚` : '',
-      curGrades.length ? `${curGrades.map((g) => g + '年生').join('・')}のカリキュラム` : ''].filter(Boolean).join('、');
-    if (!confirm(`今の内容を、読み込んだファイルの内容に置きかえます。${extra ? `（${extra}も入れます）` : ''}よろしいですか？`)) return;
-    const before = allPhotoIds();
-    for (const p of photoFiles) {
-      const rec = { id: p.id, name: p.name, width: p.width, height: p.height, blob: base64ToBlob(p.data), addedAt: Date.now() };
-      await putPhoto(rec); addMeta(rec);
-    }
-    // ロゴ・季節のイラストは、同じものだけ置きかえ、ほかはそのまま残す（季節のイラストは取り込んだ順を保つ）
-    for (const [k, p] of illustFiles.entries()) {
-      const type = p.type || 'image/jpeg';
-      const rec = { id: p.id, kind: p.kind || (p.id.includes('logo') ? 'logo' : 'season'), name: p.name, type, width: p.width, height: p.height, blob: base64ToBlob(p.data, type), addedAt: p.addedAt || Date.now() + k };
-      await putPhoto(rec); addIllustMeta(rec);
-    }
-    // カリキュラムは、ファイルに入っている学年の分だけ置きかえる
-    for (const g of curGrades) curriculum[g] = curIn[g];
-    if (curGrades.length) saveCurriculum();
-    state = s; xlsxBytes = null;
-    const keep = new Set(allPhotoIds()); await removePhotos(before.filter((id) => !keep.has(id)));
-    changed(); renderPanel();
-    toast(photoFiles.length ? `読み込みました（写真${photoFiles.length}枚）` : '読み込みました');
-  } catch {
-    toast('このファイルは読み込めませんでした。「保存ファイルに書き出す」で作ったファイルを選んでください。');
-  }
-});
+// ---------- 作り直し ----------
+// （保存ファイルの書き出し・読み込みは、別のパソコンで作業しないので外した。11/26 先生の希望）
 $('#btn-reset').addEventListener('click', async () => {
-  if (!confirm('入力した内容と写真をすべて消して、新しく作り直します。よろしいですか？\n（カリキュラム、学年のロゴ、季節のイラストは残ります。必要なら先に「保存ファイルに書き出す」をしてください）')) return;
+  if (!confirm('入力した内容と写真をすべて消して、新しく作り直します。よろしいですか？\n（カリキュラム、学年のロゴ、季節のイラストは残ります。）')) return;
   const keep = { school: state.data.school, grade: state.data.grade };
   const lastIssued = state.lastIssued;
   await removePhotos([...photoMeta.keys()]);
