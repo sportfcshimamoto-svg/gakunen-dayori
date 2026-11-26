@@ -171,7 +171,9 @@
   let teachers = null; try { teachers = JSON.parse(localStorage.getItem(TKEY) || 'null'); } catch { teachers = null; }
   const saveT = () => { try { localStorage.setItem(TKEY, JSON.stringify(teachers)); } catch { /* 覚えられなくても今回は使える */ } };
   let openT = -1;
-  const { CODE_NAME, subjectsIn, teacherRow, gradeOf, presetTeachers } = window.JikanwariCore;
+  const { CODE_NAME, subjectsIn, teacherRow, gradeOf, presetTeachers, PRESET } = window.JikanwariCore;
+  // 前に覚えた設定に、あとから足した項目がなければ、はじめの設定の同じ名前の先生からとる
+  if (teachers) teachers.forEach((te) => { if (te.halfNoSubj === undefined) { const p = PRESET.find((x) => x.label === te.label); te.halfNoSubj = !!(p && p.halfNoSubj); } });
 
   function summary(te) {
     const by = {};
@@ -204,7 +206,8 @@
     const fixed = (te.fixed && te.fixed.length ? te.fixed : [{ slots: '', text: '' }]);
     return `<div class="body" data-i="${i}">
       <div class="row">A列の名前 <input type="text" data-act="label" value="${esc(te.label || '')}" style="width:8em">
-        <label><input type="checkbox" data-act="noSubj"${te.noSubj ? ' checked' : ''}> 教科を書かない（音楽・外国語・図書など：「４－１」とだけ書く）</label></div>
+        <label><input type="checkbox" data-act="noSubj"${te.noSubj ? ' checked' : ''}> 教科を書かない（音楽・外国語・図書など：「４－１」とだけ書く）</label>
+        <label><input type="checkbox" data-act="halfNoSubj"${te.halfNoSubj ? ' checked' : ''}> 半分ずつの授業は教科を書かない（「3-1/3-2」と書く）</label></div>
       <div class="tablewrap" style="max-height:none"><table class="pick"><thead><tr><th>教科＼クラス</th>${classHead}</tr></thead><tbody>${rows}</tbody></table></div>
       <p class="help">灰色はそのクラスにない教科です。教科の名前を押すと、全部のクラスをまとめて選べます。</p>
       ${names.length ? `<div class="excl"><span class="help">入れる授業（イデアの授業名。担任がする授業などは、はずす）：</span><br>${names.map((n) => `<label><input type="checkbox" data-act="excl" data-n="${esc(n)}"${excl.has(n) ? '' : ' checked'}> ${esc(n)}</label>`).join('')}</div>` : ''}
@@ -262,6 +265,7 @@
     if (act === 'pick') { te.picks = el.checked ? [...new Set([...te.picks, el.dataset.k])] : te.picks.filter((k) => k !== el.dataset.k); }
     else if (act === 'excl') { const n = el.dataset.n; te.excl = el.checked ? (te.excl || []).filter((x) => x !== n) : [...new Set([...(te.excl || []), n])]; }
     else if (act === 'noSubj') te.noSubj = el.checked;
+    else if (act === 'halfNoSubj') te.halfNoSubj = el.checked;
     else return;
     saveT(); renderTeachers();
   });

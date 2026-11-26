@@ -104,7 +104,7 @@
     return out;
   }
   // 先生1人の行（29マス）を作る
-  // teacher = { label, picks: ['4-1|理', ...], excl: ['2年音楽 (音楽 )', ...], noSubj: 専科の書き方（学級だけ）, fixed: [{ slots: '火2 金1', text: '支援担会議' }] }
+  // teacher = { label, picks: ['4-1|理', ...], excl: ['2年音楽 (音楽 )', ...], noSubj: 専科の書き方（学級だけ）, halfNoSubj: 半分ずつの授業は学級だけ（3-1/3-2）, fixed: [{ slots: '火2 金1', text: '支援担会議' }] }
   function teacherRow(t, teacher, flips) {
     const picks = new Set(teacher.picks || []), excl = new Set(teacher.excl || []);
     const fixed = {}; (teacher.fixed || []).forEach((f) => { if (f.text) slotsOf(t, f.slots).forEach((j) => { fixed[j] = f.text; }); });
@@ -130,7 +130,7 @@
         else if (fullGrades.length === 1) parts.push(FW(`${fullGrades[0]}年`) + subj(g.code));
         rest.forEach((n) => parts.push(FW(n) + subj(g.code)));
       });
-      if (halves[0].length || halves[1].length) parts.push(halves.map((h) => h.map((x) => x.cls + subj(x.code)).join('・')).join('/'));
+      if (halves[0].length || halves[1].length) parts.push(halves.map((h) => h.map((x) => x.cls + (teacher.halfNoSubj ? '' : subj(x.code))).join('・')).join('/'));
       if (fixed[j]) parts.push(fixed[j]);
       return parts.join('・');
     });
@@ -142,14 +142,14 @@
     { label: '支援①', sel: { 4: '理算', 5: '理算' }, fixed: MEETING },
     { label: '支援②', sel: { 1: '国図', 2: '国図' }, fixed: MEETING },
     { label: '支援③', sel: { 4: '国社', 5: '国社' }, fixed: MEETING },
-    { label: '支援④', sel: { 2: '体算', 3: '理算' }, fixed: MEETING },
+    { label: '支援④', sel: { 2: '体算', 3: '理算' }, fixed: MEETING, halfNoSubj: true },
     { label: '支援⑤', sel: { 3: '国社', '6-1': '国社', '6-2': '国社' }, fixed: MEETING },
     { label: '支援⑥', sel: { 1: '体算', 6: '算', '6-1': '理', '6-2': '理' }, fixed: MEETING },
     { label: '支援員', sel: {} },
     { label: '首席', sel: { 4: '算', 6: '理' } },
     { label: '音楽', sel: { 2: '音', 3: '音', 4: '音', 5: '音', 6: '音' }, noSubj: true, excl: ['2年音楽 (音楽 )'] },
     { label: '理専', sel: { 4: '理', 5: '理算' } },
-    { label: '軽減', sel: { 3: '理' } },
+    { label: '軽減', sel: { 3: '理' }, halfNoSubj: true },
     { label: '外国語', sel: { 5: '外', 6: '外' }, noSubj: true },
     { label: '図書', sel: { 1: '書', 2: '書', 3: '書', 4: '書', 5: '書', 6: '書' }, noSubj: true },
   ];
@@ -162,7 +162,7 @@
     }
     return picks;
   }
-  const presetTeachers = (t) => PRESET.map((p) => ({ label: p.label, picks: expandSel(t, p.sel), excl: p.excl || [], noSubj: !!p.noSubj, fixed: (p.fixed || []).map((f) => ({ ...f })) }));
+  const presetTeachers = (t) => PRESET.map((p) => ({ label: p.label, picks: expandSel(t, p.sel), excl: p.excl || [], noSubj: !!p.noSubj, halfNoSubj: !!p.halfNoSubj, fixed: (p.fixed || []).map((f) => ({ ...f })) }));
 
-  root.JikanwariCore = { SLOTS, convCell, readIdea, cellText, flipKey, CODE_NAME, subjectsIn, teacherRow, gradeOf, presetTeachers };
+  root.JikanwariCore = { SLOTS, convCell, readIdea, cellText, flipKey, CODE_NAME, subjectsIn, teacherRow, gradeOf, presetTeachers, PRESET };
 })(typeof window !== 'undefined' ? window : globalThis);
