@@ -25,6 +25,13 @@
   table.raw tbody th { position: sticky; left: 0; background: #f0f2f5; color: var(--sub); font-weight: normal; text-align: right; }
   table.raw td.day { background: #e3f0ff; font-weight: bold; }
   table.raw td.empty { background: #fafafa; }
+  table.tt2 td { text-align: center; min-width: 3.2em; }
+  table.tt2 thead tr:nth-child(2) th { top: 23px; }
+  table.tt2 .dsep { border-left: 2px solid #8a93a3; }
+  table.tt2 td.split { background: #fff4c2; cursor: pointer; }
+  table.tt2 td.split:hover { outline: 2px solid var(--accent); outline-offset: -2px; }
+  table.tt2 td.flipped { background: #ffe3a3; font-weight: bold; }
+  .legend-split { background: #fff4c2; padding: 0 6px; border: 1px solid var(--line); }
   pre.text { max-height: 40vh; overflow: auto; background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 8px; font-size: 12px; white-space: pre; }
 </style>
 </head>
@@ -58,13 +65,11 @@
   <section class="step off" id="s3">
     <h2><span class="num">3</span>スプレッドシートに貼る</h2>
     <div class="row"><button id="copy" class="primary" disabled>表をコピー</button><span id="msg" class="help"></span></div>
-    <ol class="copyhow">
-      <li>Googleスプレッドシートを開き、貼りたいタブの <b>A1</b> のマスをクリック</li>
-      <li><b>Ctrl + V</b> で貼る（2の表と同じ並びで入ります）</li>
-    </ol>
-    <p class="help">いまは「txtの並びのまま」貼るテスト版です。サンプルを見て、時間割の形（クラス×曜日×校時など）に並べかえるところを作っていきます。</p>
+    <ol class="copyhow" id="how"></ol>
+    <p class="help">クラスの時間割（イデアの「クラスの授業時間割一覧」）だけを入れます。一覧表のほかのタブ（児童配布用・先生ごとなど）は一覧表を見ているので、自動でそろいます。先生の行（支援・専科など）は、まだ入りません。</p>
   </section>
 </main>
+<script src="jikanwari-core.js"></script>
 <script src="jikanwari.js"></script>
 </body>
 </html>
