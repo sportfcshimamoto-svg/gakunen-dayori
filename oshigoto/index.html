@@ -104,13 +104,19 @@
   .t-note h2 { font-size: 26px; }
   .t-note p { color: var(--sub); }
   .t-note .art { right: 22px; top: 22px; width: 84px; }
-  /* 時数表は年に数回なので、いちばん下に横長で控えめに */
-  .t-year { grid-column: span 12; }
+  /* 時数表・時間割は年に数回なので、いちばん下に控えめに2つ並べる */
+  .t-year { grid-column: span 6; }
+  .t-tt { grid-column: span 6; grid-row: span 1; background: #eef1f6; color: var(--ink); border: 1px solid #d5dce8; }
+  .t-tt .freq, .t-tt .go { color: var(--ai); }
+  .t-tt h2 { font-size: 21px; }
+  .t-tt p { color: var(--sub); }
+  .t-tt .art { right: 24px; top: 24px; width: 76px; }
+  .t-tt .freq, .t-tt h2, .t-tt p { padding-right: 96px; }
 
   .t-note .freq, .t-note h2, .t-note p { padding-right: 104px; }
   .t-month .freq, .t-month h2, .t-month p { padding-right: 110px; }
   .t-year .freq, .t-year h2, .t-year p { padding-right: 96px; }
-  @media (max-width: 420px) { .freq .en { display: none; } .t-note .art, .t-month .art, .t-year .art { width: 56px; } .t-note .freq, .t-note h2, .t-note p, .t-month .freq, .t-month h2, .t-month p, .t-year .freq, .t-year h2, .t-year p { padding-right: 64px; } }
+  @media (max-width: 420px) { .freq .en { display: none; } .t-note .art, .t-month .art, .t-year .art, .t-tt .art { width: 56px; } .t-note .freq, .t-note h2, .t-note p, .t-month .freq, .t-month h2, .t-month p, .t-year .freq, .t-year h2, .t-year p, .t-tt .freq, .t-tt h2, .t-tt p { padding-right: 64px; } }
 
   footer { margin-top: 64px; border-top: 1px solid var(--line); }
   footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; padding-top: 22px; padding-bottom: 40px; font-size: 12px; color: var(--sub); letter-spacing: .04em; }
@@ -119,7 +125,7 @@
   @media (max-width: 880px) {
     .hero { grid-template-columns: 1fr; gap: 16px; padding: 36px 0 32px; }
     .bento { grid-template-columns: 1fr; gap: 16px; }
-    .t-week, .t-note, .t-month, .t-year { grid-column: auto; grid-row: auto; }
+    .t-week, .t-note, .t-month, .t-year, .t-tt { grid-column: auto; grid-row: auto; }
     .t-week { min-height: 340px; }
     .tile { padding: 26px 24px; }
     .t-week .art { width: 240px; }
@@ -202,6 +208,21 @@
       <svg class="art" viewBox="0 0 76 76" aria-hidden="true">
         <g fill="none" stroke="#9fb8a8" stroke-width="1.5"><rect x="2" y="2" width="72" height="72" rx="6"/><path d="M26 2v72M50 2v72M2 26h72M2 50h72"/></g>
         <rect x="27.5" y="27.5" width="21" height="21" fill="#3f6b52" opacity=".75"/>
+      </svg>
+    </a>
+
+    <!-- 年に数回：時間割スプレッドシート自動入力 -->
+    <a class="tile t-tt" href="jikanwari.html">
+      <div class="freq"><span class="en">A FEW TIMES A YEAR</span> <b>時間割が変わるとき</b></div>
+      <h2>時間割スプレッドシート自動入力</h2>
+      <p>時間割ソフト「イデア」のtxtを読んで、<br>時間割のスプレッドシートに入れます。</p>
+      <span class="go"><i><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></i>開く</span>
+      <!-- 飾り：曜日の見出しのある時間割 -->
+      <svg class="art" viewBox="0 0 76 76" aria-hidden="true">
+        <rect x="2" y="2" width="72" height="72" rx="6" fill="#fff" stroke="#aebbd0" stroke-width="1.5"/>
+        <path d="M2 8a6 6 0 0 1 6-6h60a6 6 0 0 1 6 6v10H2z" fill="#1f3a5f"/>
+        <g stroke="#aebbd0" stroke-width="1.5"><path d="M16 18v56M30 18v56M44 18v56M58 18v56M2 32h72M2 46h72M2 60h72"/></g>
+        <rect x="31" y="33" width="12" height="12" fill="#c4502f" opacity=".8"/>
       </svg>
     </a>
   </div>
