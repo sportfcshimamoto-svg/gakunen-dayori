@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'">
+<title>カスタネット 詳細ガイド</title>
+<style>
+@page { size: A4; margin: 15mm 15mm 16mm; @bottom-center { content: counter(page); font: 10pt "Yu Gothic", "Meiryo", sans-serif; color: #666; } }
+@page :first { @bottom-center { content: ""; } }
+:root { --ink: #1f2933; --sub: #52606d; --blue: #2f6db5; --pale: #eaf1f9; --red: #d9342b; --amber: #fff6e0; --amberline: #d99a1c; --line: #cfd8e3; }
+* { box-sizing: border-box; }
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body { margin: 0; color: var(--ink); font: 11.5pt/1.75 "Yu Gothic", "游ゴシック", "Meiryo", sans-serif; }
+section { break-after: page; }
+section:last-of-type { break-after: auto; }
+h1 { font-size: 27pt; line-height: 1.35; margin: 0 0 3mm; color: var(--blue); }
+h2 { font-size: 17pt; line-height: 1.4; margin: 0 0 4mm; padding-bottom: 2mm; border-bottom: 2.2pt solid var(--blue); }
+h3 { font-size: 12.5pt; margin: 5mm 0 1.5mm; color: var(--blue); break-after: avoid; }
+p { margin: 0 0 2.5mm; }
+.lead { color: var(--sub); }
+.when { display: inline-block; font-size: 9.5pt; font-weight: 700; color: #fff; background: var(--blue); border-radius: 3mm; padding: 0 3mm; margin-bottom: 2mm; }
+.cols { display: grid; grid-template-columns: 96mm 1fr; gap: 6mm; align-items: start; }
+.shot { display: block; width: 100%; border: .6pt solid var(--line); border-radius: 1.5mm; }
+.steps { list-style: none; margin: 0 0 3mm; padding: 0; }
+.steps li { position: relative; padding-left: 8.5mm; margin-bottom: 2.6mm; break-inside: avoid; }
+.steps .n { position: absolute; left: 0; top: .7mm; width: 6.2mm; height: 6.2mm; line-height: 6.2mm; text-align: center; border-radius: 50%; background: var(--red); color: #fff; font-size: 10.5pt; font-weight: 700; }
+.note, .warn { border-radius: 1.5mm; padding: 2.8mm 4mm; margin: 3mm 0; break-inside: avoid; }
+.note { background: var(--pale); }
+.warn { background: var(--amber); border-left: 1.2mm solid var(--amberline); }
+.note > b:first-child, .warn > b:first-child { display: block; }
+ul { margin: 1mm 0 2mm; padding-left: 5.5mm; }
+ul li { margin-bottom: 1mm; }
+ol.plain { margin: 1mm 0 2mm; padding-left: 6mm; }
+ol.plain li { margin-bottom: 1mm; }
+table { width: 100%; border-collapse: collapse; margin: 2mm 0 4mm; font-size: 10.5pt; line-height: 1.6; }
+th, td { border: .6pt solid var(--line); padding: 1.6mm 2.5mm; text-align: left; vertical-align: top; }
+th { background: var(--pale); font-weight: 700; }
+tr { break-inside: avoid; }
+.flow { counter-reset: f; list-style: none; padding: 0; margin: 2mm 0 0; }
+.flow li { counter-increment: f; display: grid; grid-template-columns: 9mm 33mm 1fr; align-items: baseline; padding: 1.5mm 0; border-bottom: .6pt solid var(--line); }
+.flow li::before { content: counter(f); font-weight: 700; color: var(--blue); font-size: 13pt; }
+.flow b { font-weight: 700; }
+.url { font-weight: 700; word-break: break-all; color: var(--blue); }
+.qa dt { font-weight: 700; margin-top: 3mm; break-after: avoid; }
+.qa dd { margin: .5mm 0 0 0; }
+.full { width: 100%; }
+/* 画面で見るとき（Web版）：紙のように白い面を中央に。ページ番号の列は印刷のときだけ */
+@media screen {
+  html { background: #f5f1e8; }
+  body { max-width: 196mm; margin: 0 auto 12mm; padding: 4mm 8mm 0; }
+  .back { font: 14px/1.6 "Yu Gothic UI", "Meiryo", sans-serif; color: #5d6472; padding: 4mm 0; }
+  .back a { color: inherit; }
+  section { background: #fff; border: 1px solid #ddd5c4; border-radius: 4mm; padding: 9mm 10mm; margin-bottom: 6mm; }
+  .toc ~ tr > td:nth-child(3), .toc > th:nth-child(3) { display: none; }
+}
+@media screen and (max-width: 700px) { .cols { grid-template-columns: 1fr; } body { padding: 0 3mm; } section { padding: 6mm 5mm; } }
+@media print { .back { display: none; } }
+</style>
+</head>
+<body>
+<div class="back"><a href="./">← カスタネットのトップへ</a>　｜　<a href="kantan.html">かんたんガイド</a></div>
+
+<section>
+  <h1>カスタネット<br>詳細ガイド</h1>
+  <p class="lead">「かんたんガイド」で分からなかった操作を、少しくわしく書いたものです。必要なところだけ読んでください。</p>
+
+  <h3>開くところ</h3>
+  <p class="url">https://sportfcshimamoto-svg.github.io/gakunen-dayori/oshigoto/</p>
+  <p>EdgeかChromeで開きます。トップのタイルを押すと、それぞれのページが開きます。どのページも、上のタブで行き来できます。</p>
+
+  <h3>このガイドの中身</h3>
+  <table>
+    <tr class="toc"><th style="width:62mm">ページ</th><th style="width:28mm">使う回数</th><th style="width:14mm">ページ</th></tr>
+    <tr><td>学年だより作成（入力・Word）</td><td>毎月</td><td>2</td></tr>
+    <tr><td>学年だより作成（写真・イラスト）</td><td>毎月</td><td>3</td></tr>
+    <tr><td>週案自動入力</td><td>はじめに1回</td><td>4</td></tr>
+    <tr><td>連絡帳自動入力</td><td>はじめに1回</td><td>5</td></tr>
+    <tr><td>授業時数算出シート自動入力・困ったとき</td><td>年に2〜3回</td><td>6</td></tr>
+  </table>
+
+  <div class="note"><b>新しくなったのに画面が変わらないとき</b>左上の「カスタネット」の横の数字（例：1.10）がバージョンです。数字が古いままなら、<b>Ctrl＋F5</b>で読み直します。</div>
+
+  <div class="warn">
+    <b>必ず守ること</b>
+    <ul style="margin-bottom:0">
+      <li>使うのは、<b>自分に割り当てられた校務用パソコン</b>だけにします。</li>
+      <li>生成AIには、<b>子どもの名前など、個人が分かることを入れません</b>。写真も渡しません。</li>
+      <li>週案・行事予定のリンクは、<b>校内の先生にだけ</b>伝えます。</li>
+      <li>入力した内容や写真は、このパソコンのブラウザの中だけに保存します。インターネットには送りません。</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <h2>学年だより作成：入力とWord</h2>
+  <span class="when">毎月</span>
+  <img class="shot full" src="guide-img/dayori.png" alt="学年だより作成の画面" style="max-height:78mm;object-fit:cover;object-position:top">
+  <p style="margin-top:2mm">左のタブを①から順に入れます。右に仕上がりの見本が出ます。入力は自動で保存され、<b>同じパソコンの同じブラウザ</b>で続きができます。</p>
+  <table>
+    <tr><th style="width:30mm">① 基本</th><td>学年・何月号・発行日を選びます。<b>ロゴ</b>は、はじめに1回だけ、ロゴの画像を開いて Ctrl＋C → ロゴの欄をクリックして Ctrl＋V。</td></tr>
+    <tr><th>② 行事予定</th><td>行事予定のGoogleスプレッドシートのリンクを貼り、「スプレッドシートから読み込む」。次からはボタンだけです。チェックが付いた行事が載ります。文字はその場で直せます。<br><span class="lead">読み込めないとき：シートの共有を「リンクを知っている全員・閲覧者」にします。</span></td></tr>
+    <tr><th>⑥ カリキュラム</th><td>はじめに1回。カリキュラムをWordなどで開き、<b>表の全体を選んで Ctrl＋C</b> → ⑥の欄で Ctrl＋V。うまくいかないときは「コピーした表を読み込む（ボタンで）」。</td></tr>
+    <tr><th>③ 学習予定</th><td>「カリキュラムから〇月の分を入れる」を押すと、その月の項目が原文のまま入ります。道徳・総合などは手で書きます。</td></tr>
+    <tr><th>④ あいさつ<br>⑤ 記事</th><td>「AIで文章を作る」を開き、メモを書く →「お願いの文をコピー」→ 開いたAIに Ctrl＋V で送る → 返事をコピーして貼り、「この文章を入れる」。最後は自分の言葉に直します。</td></tr>
+    <tr><th>Wordを作る</th><td>右上の「Wordファイルを作る」。気になるところがあると知らせが出ます（「このまま作る」でも作れます）。できたWordを開いて、2ページに収まっているかを確かめます。</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2>学年だより作成：写真・イラスト</h2>
+  <span class="when">毎月</span>
+  <p>学校のパソコンではファイルを選ぶ画面が止められているので、<b>フォルダ</b>か<b>貼り付け</b>で入れます。写真はこのパソコンの中だけに保存され、Wordでは白黒になります。</p>
+
+  <h3>写真をフォルダからまとめて入れる（おすすめ）</h3>
+  <ol class="plain">
+    <li>デスクトップなどに<b>「学年だより写真」</b>フォルダを作り、その中に<b>行事の名前のフォルダ</b>（「林間」「音楽会」など）を作って写真を入れます。</li>
+    <li>⑤で記事を作り、<b>見出しに行事の名前を入れておきます</b>（例：「林間学校にいってきました」）。</li>
+    <li>⑤の「📁 フォルダから写真を読み込む」で、最初の1回だけ「フォルダを選ぶ」→「学年だより写真」を選びます。次からは「写真を読み込む」を押すだけです。</li>
+  </ol>
+  <p class="lead">見出しと名前が合う記事に写真が入ります。合う記事がないフォルダは読みません。</p>
+
+  <h3>写真を1枚ずつ入れる</h3>
+  <p>写真を開いて Ctrl＋C → 記事の下の「ここに Ctrl＋V で写真を貼り付け」をクリックして Ctrl＋V。うまくいかないときは「コピーした写真を入れる（ボタンで）」。</p>
+
+  <h3>イラスト</h3>
+  <ol class="plain">
+    <li><b>「学年だよりイラスト」</b>フォルダの中に<b>「12月」</b>のような月のフォルダを作り、絵を入れます。</li>
+    <li>⑤の「🎨 〇月のイラスト」で、最初の1回だけ「フォルダを選ぶ」。次からは「イラストを読み込む」。</li>
+  </ol>
+  <p class="lead">2ページ目の空いているところ（見出しの横・記事の終わり・下の空き）に自動で入ります。最初から入っている小さい絵もあるので、使わなくてもかまいません。</p>
+
+  <h3>消す・戻す</h3>
+  <table>
+    <tr><th style="width:52mm">写真・絵を消す</th><td>写真や絵を<b>クリック</b>（確認は出ません）</td></tr>
+    <tr><th>まちがえて消した</th><td>フォルダの写真 →「写真を読み込む」をもう一度（消した分だけ戻ります）<br>貼り付けた写真 → もう一度コピーして貼り付け<br>絵 →「イラストを読み込む」をもう一度</td></tr>
+    <tr><th>月が変わったとき</th><td>前の月の記事の写真は自動で消えます（ロゴ・イラストは残ります）</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2>週案自動入力</h2>
+  <span class="when">はじめに1回</span>
+  <p>週案（Googleスプレッドシート）に「週案」のメニューを入れます。入れたあとは、週案の中で週のタブがまとめて作れます。</p>
+
+  <h3>はじめに1回：メニューを入れる</h3>
+  <ol class="plain">
+    <li>カスタネットの「週案自動入力」で「<b>プログラムをコピー</b>」を押します。</li>
+    <li>週案を開き、「<b>拡張機能</b>」→「<b>Apps Script</b>」。真ん中の文字をクリックし、Ctrl＋A → Delete で消して、Ctrl＋V で貼り、💾（保存）。</li>
+    <li>上の「▶ 実行」の右の欄を「<b>onOpen</b>」にして「▶ 実行」。</li>
+    <li>「承認が必要です」→「権限を確認」→ 自分のアカウント →（「確認されていません」と出たら「詳細」→「移動」）→「<b>許可</b>」。</li>
+    <li>週案にもどると、上のメニューに「<b>週案</b>」が出ます。</li>
+  </ol>
+  <div class="warn"><b>「承認」で止められたとき</b>学校のアカウントの設定で止められています。担当の先生に相談してください。</div>
+
+  <h3>使う：週のタブを作る</h3>
+  <ol class="plain">
+    <li>メニュー「週案」→「<b>週のタブを作る</b>」。右にパネルが出ます。</li>
+    <li>組ごとに<b>時間割を貼ります</b>（週案が覚えるので、次からは貼らなくてよい）。</li>
+    <li><b>期間を選び</b>、「週のタブを作る」。</li>
+  </ol>
+  <p class="lead">日付は「1月4日」の形で入ります。祝日はグレーになり、教科は入りません（夏休みなど学校の休みは自分でグレーに）。算数の下に「分割」を入れるかは、パネルのチェックで選べます。</p>
+  <p class="lead">形のちがう前の週案から移すときは、メニュー「週案」→「前の週案から移す」を使います（くわしくはカスタネットのページの「前の週案から移す」）。</p>
+</section>
+
+<section>
+  <h2>連絡帳自動入力</h2>
+  <span class="when">はじめに1回</span>
+  <p>週案とつないでおくと、週案を直すだけで、連絡帳の<b>時間割・宿題・決まった持ち物</b>が自動で直ります。</p>
+
+  <h3>はじめに1回</h3>
+  <ol class="plain">
+    <li>カスタネットの「連絡帳自動入力」で「<b>プログラムをコピー</b>」。</li>
+    <li>連絡帳を開き、週案のときと同じように「拡張機能」→「Apps Script」に貼って保存 →「onOpen」を実行して許可。メニューに「<b>連絡帳</b>」が出ます。</li>
+    <li>メニュー「連絡帳」→「<b>はじめに：週案をつなぐ</b>」。週案のリンク（週案を開いたときの上のアドレス）を貼って「OK」。もう一度「許可」を聞かれたら許可します。</li>
+    <li>「設定」の画面で、自分の学年の<b>ふだんの時間数・下校時刻・持ち物</b>を入れて「保存する」。</li>
+  </ol>
+  <p class="lead">週案と連絡帳は、5年生の形をコピーして使います。連絡帳の「5-1」「5-2」の列に、週案の1組・2組から書きます。</p>
+
+  <h3>自動で書くもの・先生が書くもの</h3>
+  <table>
+    <tr><th style="width:16mm">時</th><td>次の日の時間割。ふだんと変わったところだけ（例：火曜　①体育　それ以外通り）と、早く帰る日の下校時刻</td></tr>
+    <tr><th>し</th><td>週案の「宿題」の行</td></tr>
+    <tr><th>持</th><td>決まった持ち物（月曜セット・体そう服など）。絵の具セットなどは先生が書く</td></tr>
+    <tr><th>連</th><td>先生が書く</td></tr>
+  </table>
+
+  <h3>直したときの決まり</h3>
+  <ul>
+    <li>週案を直すと、数秒〜10分で連絡帳に出ます。週案に新しい週のタブを作ると、連絡帳にもできます。</li>
+    <li>連絡帳で手で直したところは残ります。そのあと週案のその日を直すと、その日だけ週案の内容になります（<b>新しく直したほうが残る</b>）。</li>
+    <li>過ぎた日は書きかえません。祝日・グレーの日は「時」に「敬老の日」などと書きます。</li>
+    <li>メニュー「連絡帳」→「<b>週案から自動入力</b>」は、全部を週案に合わせたいときだけ押します（手で直したところも戻ります）。</li>
+  </ul>
+</section>
+
+<section>
+  <h2>授業時数算出シート自動入力</h2>
+  <span class="when">年に2〜3回</span>
+  <p>週案の教科を、授業時数算出シート（Excel）に<b>コピーして1回で貼ります</b>。</p>
+  <ol class="plain">
+    <li><b>週案を読み込む：</b>週案のリンクを貼って「読み込む」（共有は「リンクを知っている全員・閲覧者」）。次からは、開くと自動で読み込みます。</li>
+    <li><b>組と週を選ぶ：</b>最初の週から最後の週までを選びます。</li>
+    <li><b>入る文字を確かめる：</b>赤いマスは、教科が分からなかったところです。教科を選びます（「入れない」もできます）。</li>
+    <li>「<b>時数表用にコピー</b>」→ Excelで、<b>選んだ最初の週の行の、月曜日「モジュール」のマス</b>をクリックして Ctrl＋V。</li>
+  </ol>
+  <p class="lead">週案にない週（夏休み・冬休み）は空のまま貼ります。</p>
+
+  <h2 style="margin-top:8mm">困ったとき</h2>
+  <dl class="qa">
+    <dt>画面が古いまま・新しい機能が出ない</dt>
+    <dd>Ctrl＋F5で読み直します。更新の直後は10分ほど待ちます。</dd>
+    <dt>週案・連絡帳にメニューが出ない</dt>
+    <dd>スプレッドシートを読み直します（F5）。出なければ、Apps Scriptで「onOpen」を実行して許可したかを確かめます。</dd>
+    <dt>学年だよりが「はみ出しています」</dt>
+    <dd>文を短くする、写真を減らす・小さくする、で調整します。</dd>
+    <dt>学年だよりの続きが出てこない</dt>
+    <dd>入力は、そのパソコンのそのブラウザにだけ保存されています。同じパソコン・同じブラウザで開きます。</dd>
+    <dt>Excelに貼ったら、ずれた</dt>
+    <dd>Ctrl＋Zでもどし、最初の週の行の、月曜日「モジュール」のマスに貼り直します。</dd>
+  </dl>
+  <div class="note"><b>問い合わせ先</b>校内の担当：＿＿＿＿＿＿＿＿＿＿＿＿＿＿</div>
+</section>
+
+</body>
+</html>

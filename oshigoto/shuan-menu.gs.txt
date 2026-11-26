@@ -16,7 +16,146 @@ var SHORT = { 国: '国語', 社: '社会', 算: '算数', 理: '理科', 生: '
 
 // ---------- メニュー・画面 ----------
 function onOpen() {
-  SpreadsheetApp.getUi().createMenu('週案').addItem('週のタブを作る', 'showSidebar').addItem('前の週案から移す', 'showImport').addToUi();
+  SpreadsheetApp.getUi().createMenu('週案').addItem('週のタブを作る', 'showSidebar').addItem('前の週案から移す', 'showImport')
+    .addSeparator().addItem('5年生の形にそろえる（宿題・音・連の行）', 'addOtoRenRows').addToUi();
+}
+
+// ---------- 5年生の形にそろえる：「○組」の見出し、宿題の行、その下の「音」「連」の行（連絡帳の「音」「連」に書く） ----------
+var EXTRA_ROWS = ['音', '連'];
+
+/** メニュー：原本（「A週」「後期」などのひな形）と、今週から先の週のタブを5年生の形にそろえる。
+ *  ①月曜の左のマスが空なら「1組」「2組」…を入れる ②6校時の下に「宿題」の行がなければ足す ③宿題の下に「音」「連」の行を足す */
+function addOtoRenRows() {
+  var ui = SpreadsheetApp.getUi();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var now = new Date();
+  var thisMon = mondayOf_(iso_(new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()))));
+  var future = {};
+  existingWeeks_().forEach(function (w) { if (w.monday >= thisMon) future[w.name] = 1; });
+  var targets = ss.getSheets().filter(function (s) {
+    var name = s.getName();
+    var vals = displayValues_(s);
+    var hasClasses = Object.keys(shapeOf_(vals).classes).length > 0;
+    if (!hasClasses && !bareBlocks_(vals).length) return false;   // 時間割の表のないタブ
+    if (!isWeekName_(name)) return true;                           // ひな形（原本など）
+    if (future[name]) return true;
+    // 見出しのない週案は、タブの名前で今週から先か決める（決めきれない名前は、どの読み方でも先のときだけ）
+    if (hasClasses) return false;
+    var c = mondayCandidates_(name, 0, schoolYear_());
+    return c.length > 0 && c.every(function (m) { return m >= thisMon; });
+  });
+  if (!targets.length) { ui.alert('時間割の表（月〜金の見出し）があるタブが見つかりませんでした。'); return; }
+  var ok = ui.alert('5年生の形にそろえる',
+    '次のタブを5年生の週案の形にそろえます。\n' +
+    '・月曜の左のマスが空なら「1組」「2組」…を入れる\n' +
+    '・6校時の下に「宿題」の行がなければ足す\n' +
+    '・「宿題」の下に「音」「連」の行を足す\n' +
+    '（もうあるものは足しません。ほかの行やマスはそのまま）\n\n' +
+    targets.map(function (s) { return s.getName(); }).join('、') +
+    '\n\nこれから「週のタブを作る」で作るタブにも、この行が入ります。よろしいですか？', ui.ButtonSet.OK_CANCEL);
+  if (ok !== ui.Button.OK) return;
+  var done = [], notes = [];
+  targets.forEach(function (s) {
+    var a = addClassHeads_(s);
+    if (a === null) { notes.push(s.getName() + '：月曜の左のマスに文字があるので、組の見出しを入れられませんでした'); return; }
+    var b = addHomeworkRow_(s);
+    var c = addExtraRows_(s);
+    if (a || b || c) done.push(s.getName());
+  });
+  SpreadsheetApp.flush();
+  ui.alert((done.length ? 'そろえました：' + done.join('、') : 'どのタブも、もう5年生の形でした。') +
+    (notes.length ? '\n\n' + notes.join('\n') : ''));
+}
+
+/** 「○組」の見出しがない表：上の4行で、月〜金が横に並んでいるところ（左どなりのマスが見出しの場所）。左から順 */
+function bareBlocks_(vals) {
+  var out = [];
+  for (var r = 1; r <= Math.min(vals.length, 4); r++) {
+    var maxC = vals[r - 1].length;
+    for (var c = 2; c + 4 <= maxC; c++) {
+      if (DAYS.every(function (d, i) { return norm_(at_(vals, c + i, r)) === d; })) out.push({ r: r, labelCol: c - 1, label: norm_(at_(vals, c - 1, r)) });
+    }
+  }
+  return out.sort(function (a, b) { return a.labelCol - b.labelCol; });
+}
+
+/** 「○組」の見出しがなければ、月曜の左のマスに左から「1組」「2組」…を入れる。入れたら true、もうあれば false、入れられなければ null */
+function addClassHeads_(sh) {
+  var vals = displayValues_(sh);
+  if (Object.keys(shapeOf_(vals).classes).length) return false;
+  var blocks = bareBlocks_(vals);
+  if (!blocks.length || blocks.some(function (b) { return b.label && !/組$/.test(b.label); })) return null;
+  blocks.forEach(function (b, i) { sh.getRange(b.r, b.labelCol).setValue((i + 1) + '組'); });
+  return true;
+}
+
+/** 6校時（3行）の下に「宿題」の行がなければ足す（書式は上の行から。マスは空）。足したら true */
+function addHomeworkRow_(sh) {
+  var shape = shapeOf_(displayValues_(sh));
+  var names = Object.keys(shape.classes);
+  if (!names.length || names.every(function (c) { return shape.classes[c].rows['宿題']; })) return false;
+  // 6校時のかたまり（または、6校時のところに書いた「宿題」）のいちばん下の行の、次に足す
+  var after = 0;
+  names.forEach(function (c) {
+    var cl = shape.classes[c];
+    if (cl.rows['6']) after = Math.max(after, blockEnd_(sh, cl.rows['6'], cl.labelCol));
+    if (cl.rows['宿題']) after = Math.max(after, blockEnd_(sh, cl.rows['宿題'], cl.labelCol));
+  });
+  if (!after) return false;
+  var row = insertPlainRow_(sh, after);
+  names.forEach(function (c) {
+    var cl = shape.classes[c];
+    if (!cl.rows['宿題']) sh.getRange(row, cl.labelCol).setValue('宿題');
+  });
+  return true;
+}
+
+/** 見出しのマス（結合していれば、そのかたまり）のいちばん下の行 */
+function blockEnd_(sh, row, col) {
+  var m = sh.getRange(row, col).getMergedRanges();
+  return m && m.length ? m[0].getLastRow() : row;
+}
+
+/** after の行の下に、空の1行を足す（書式は上の行から。結合はしない。月〜金の色はなし）。足した行の番号 */
+function insertPlainRow_(sh, after) {
+  sh.insertRowsAfter(after, 1);
+  var row = after + 1;
+  var all = sh.getRange(row, 1, 1, sh.getMaxColumns());
+  all.breakApart();
+  all.clearContent();
+  all.setBackground(null);
+  sh.setRowHeight(row, Math.min(sh.getRowHeight(after), 40));
+  return row;
+}
+
+/** 週案のどこかのタブ（ひな形）に「音」「連」の行があるか */
+function hasExtraRows_(ss) {
+  return ss.getSheets().some(function (s) {
+    if (isWeekName_(s.getName())) return false;
+    var cls = shapeOf_(displayValues_(s)).classes;
+    return Object.keys(cls).some(function (c) { return EXTRA_ROWS.every(function (l) { return cls[c].rows[l]; }); });
+  });
+}
+
+/** 1つのタブの「宿題」の行の下に、ない「音」「連」の行を足す（書式は宿題の行と同じ、マスは空）。足したら true */
+function addExtraRows_(sh) {
+  var added = false;
+  EXTRA_ROWS.forEach(function (lab) {
+    var shape = shapeOf_(displayValues_(sh));
+    var names = Object.keys(shape.classes).filter(function (c) { return shape.classes[c].rows['宿題']; });
+    if (!names.length || names.every(function (c) { return shape.classes[c].rows[lab]; })) return;
+    // 宿題の行（結合していればそのかたまり）と、前に足した行のいちばん下の、次に足す
+    var after = 0;
+    names.forEach(function (c) {
+      var cl = shape.classes[c];
+      after = Math.max(after, blockEnd_(sh, cl.rows['宿題'], cl.labelCol));
+      EXTRA_ROWS.slice(0, EXTRA_ROWS.indexOf(lab)).forEach(function (l) { if (cl.rows[l]) after = Math.max(after, cl.rows[l]); });
+    });
+    var row = insertPlainRow_(sh, after);
+    names.forEach(function (c) { if (!shape.classes[c].rows[lab]) sh.getRange(row, shape.classes[c].labelCol).setValue(lab); });
+    added = true;
+  });
+  return added;
 }
 
 function showSidebar() {
@@ -81,6 +220,7 @@ function makeWeeks(from, to, abOverride, bunkatsu) {
     var sh = tpl.copyTo(ss).setName(w.name);
     ss.setActiveSheet(sh);
     ss.moveActiveSheet(ss.getNumSheets());
+    if (hasExtraRows_(ss)) { addHomeworkRow_(sh); addExtraRows_(sh); }   // 原本に「音」「連」の行があれば、新しいタブにも
     notes = notes.concat(fillWeek_(sh, w, grids, colorSource_(ss, w.ab), bunkatsu));
     existing.push({ name: w.name, monday: w.monday, ab: w.ab });   // 次の週のひな形は、いま作ったタブ
     made.push(w.name);
@@ -167,9 +307,11 @@ function shapeOf_(vals) {
       if (/^(朝学|朝学習|モジュール)$/.test(lab)) cl.rows['朝'] = r;
       else if (/^[1-6](\.0+)?$/.test(lab)) cl.rows[String(parseInt(lab, 10))] = r;
       else if (lab === '宿題') cl.rows['宿題'] = r;
+      else if (EXTRA_ROWS.indexOf(lab) >= 0 && cl.rows['宿題'] && !cl.rows[lab]) cl.rows[lab] = r;   // 宿題の下の「音」「連」
     }
     cl.firstRow = cl.rows['朝'] || cl.rows['1'] || 0;
     cl.lastRow = Math.max(cl.rows['宿題'] || 0, cl.rows['6'] ? cl.rows['6'] + 2 : 0);
+    EXTRA_ROWS.forEach(function (lab) { if (cl.rows[lab]) cl.lastRow = Math.max(cl.lastRow, cl.rows[lab]); });
   });
   return { classes: classes, abCell: abCell, ab: ab };
 }
@@ -187,8 +329,8 @@ function dateRowOf_(vals, cl) {
 
 /** タブの名前（「1214」「12/14」「12月14日」）と月曜の日から、月曜日の日付の候補（祝日の週は火曜の名前のこともある） */
 function mondayCandidates_(name, mondayDay, schoolYear) {
-  var digits = norm_(name);
-  var sl = /^(\d{1,2})(?:\/|月)(\d{1,2})日?$/.exec(digits);
+  var digits = weekKey_(name);
+  var sl =/^(\d{1,2})(?:\/|月)(\d{1,2})日?$/.exec(digits);
   if (sl) digits = sl[1] + ('0' + sl[2]).slice(-2);
   if (!/^\d{2,4}$/.test(digits)) return [];
   var out = [], byName = [];
@@ -239,7 +381,9 @@ function pickTemplate_(ss, existing, ab) {
   return ok.filter(function (s) { return n(s) === ab + '週'; })[0] || ok.filter(function (s) { return n(s).indexOf(ab + '週') >= 0; })[0] || ok[0] || null;
 }
 
-function isWeekName_(name) { return /^\s*\d{1,2}(?:[\/／月]\d{1,2}日?|\d{1,3})\s*$/.test(norm_(name)); }
+function isWeekName_(name) { return /^\s*\d{1,2}(?:[\/／月]\d{1,2}日?|\d{1,3})\s*$/.test(weekKey_(name)); }
+/** タブの名前の後ろの「～」をとる（1年生・2年生の週案は「825~」「4月13日～」の形） */
+function weekKey_(name) { return norm_(name).replace(/[~〜～]+$/, '').trim(); }
 
 /** 色のもと：日付でないひな形のタブ（「A週」→「A週（後期）」など→「原本」の順）。前の週のグレー（休みの日）をうつさないため */
 function colorSource_(ss, ab) {

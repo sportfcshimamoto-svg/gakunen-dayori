@@ -41,6 +41,12 @@
   .brand { cursor: default; }
   .brand { font-size: 22px; letter-spacing: .14em; }
   .brand .ver { margin-left: .5em; font-size: .62em; font-weight: 500; letter-spacing: .04em; opacity: .55; }
+  /* 右上の小さなタブ：ガイド（いつも新しい版を見られるように。別のタブで開く） */
+  .guides { margin-left: auto; display: flex; gap: 8px; }
+  .guides a { font-size: 13px; font-weight: 700; letter-spacing: .04em; color: var(--sub); text-decoration: none; padding: 4px 14px; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.55); white-space: nowrap; }
+  .guides a:hover { color: var(--ai); border-color: var(--ai); }
+  .guides a:focus-visible { outline: 3px solid var(--shu); outline-offset: 3px; }
+  @media (max-width: 480px) { .guides a { font-size: 12px; padding: 3px 10px; } }
   .hero { position: relative; padding: 56px 0 44px; display: grid; grid-template-columns: auto 1fr; gap: 28px; align-items: end; }
   .hero .eyebrow { grid-column: 1 / -1; font-size: 12px; letter-spacing: .32em; color: var(--sub); font-weight: 700; }
   /* アプリの名前（カスタネット）は左上のロゴとして小さく。ページの主役は「今日は早く帰ろ」 */
@@ -140,7 +146,8 @@
 <header>
   <div class="wrap">
     <button class="clapper" type="button" aria-label="カスタネットを鳴らす"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><ellipse cx="16.5" cy="22.5" rx="13" ry="5" fill="#162b47"/><ellipse cx="16.5" cy="21" rx="13" ry="5" fill="#1f3a5f"/><g class="lid"><ellipse cx="16.5" cy="17" rx="13" ry="5" fill="#a23f23"/><ellipse cx="16.5" cy="15.5" rx="13" ry="5" fill="#c4502f"/></g><rect x="2" y="13" width="4.4" height="12" rx="2.2" fill="none" stroke="#1d2430" stroke-width="1.6"/></svg></button>
-    <span class="brand">カスタネット<span class="ver">2.00</span></span>
+    <span class="brand">カスタネット<span class="ver">2.01</span></span>
+    <nav class="guides" aria-label="ガイド"><a href="kantan.html" target="_blank" rel="noopener">かんたんガイド</a><a href="guide.html" target="_blank" rel="noopener">詳細ガイド</a></nav>
   </div>
 </header>
 
